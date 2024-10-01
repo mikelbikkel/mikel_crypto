@@ -16,9 +16,11 @@ type
   TCryptoFacade = class
   strict private
   const
+  // PKCS = Public-Key Cryptography Standards
+  // https://datatracker.ietf.org/doc/html/rfc2898
     PKCS5_SALT_LEN = Int32(8);
     SALT_MAGIC_LEN = Int32(8);
-    SALT_SIZE = Int32(8);
+    // SALT_SIZE = Int32(8);
     SALT_MAGIC: String = 'Salted__';
     AES_256_KEY_LEN_BYTES = 32;
     AES_256_IV_LEN_BYTES = 16;
@@ -27,12 +29,8 @@ type
     mGen: TRandom;
 
     function GenerateSalt: TBytes;
-    function GenerateKey(const parPass: TBytes; const parSalt: TBytes = nil)
-      : TCryptoItem;
-    function GenerateIV(const keyBtes, passBytes, saltBytes: TBytes)
-      : TCryptoItem;
-    function GenerateHash(const ar: array of TBytes; const lenItem: integer)
-      : TCryptoItem;
+    function GenerateHash(const digestname: string; const ar: array of TBytes;
+      const lenItem: integer): TCryptoItem;
   public
     constructor Create;
     destructor Destroy; override;
@@ -71,20 +69,29 @@ var
 const
   CRYPTO_NAME = 'AES/CBC/PKCS7PADDING';
 begin
-  arSalt := GenerateSalt;
   arPassword := TEncoding.UTF8.GetBytes(password);
 
+  if useSalt then
+  begin
+    arSalt := GenerateSalt;
+    salt := TCryptoItem.Create(arSalt);
+    poSalt := salt.Enc32;
+  end
+  else
+  begin
+    arSalt := nil;
+    poSalt := EmptyStr;
+  end;
+
   ar := [arSalt, arPassword];
-  key := GenerateHash(ar, AES_256_KEY_LEN_BYTES);
+  key := GenerateHash('SHA-256', ar, AES_256_KEY_LEN_BYTES);
+  poKey := key.Enc32;
 
   ar := [key.Item, arPassword, arSalt];
-  iv := GenerateHash(ar, AES_256_IV_LEN_BYTES);
-
-  salt := TCryptoItem.Create(arSalt);
-
-  poSalt := salt.Enc32;
-  poKey := key.Enc32;
+  iv := GenerateHash('SHA-256', ar, AES_256_IV_LEN_BYTES);
   poIV := iv.Enc32;
+
+  // Test: iv := GenerateHash('MD5', ar, AES_256_IV_LEN_BYTES);
 
   // System.SetLength(IVBytes, AES_256_IV_LEN_BYTES);
   // cp := TCipherUtilities.GetCipher(CRYPTO_NAME);
@@ -97,58 +104,33 @@ begin
   mGen.NextBytes(result);
 end;
 
-function TCryptoFacade.GenerateHash(const ar: array of TBytes;
-  const lenItem: integer): TCryptoItem;
+function TCryptoFacade.GenerateHash(const digestname: string;
+  const ar: array of TBytes; const lenItem: integer): TCryptoItem;
 var
   res: TBytes;
   dig: IDigest;
   olen: integer;
+  // MD5, digest length = 128 bits = 16 bytes. SHA-256 = 256 bits = 32 bytes
 begin
-  SetLength(res, 32);
-  if (lenItem < 1) or (lenItem > 32) then
-    raise Exception.Create('Error Message');
-
-  dig := TDigestUtilities.GetDigest('SHA-256');
-  for var a in ar do
-    dig.BlockUpdate(a, 0, Length(a));
-  olen := dig.DoFinal(res, 0);
+  // TODO: exception for invalid digest name
+  dig := TDigestUtilities.GetDigest(digestname);
   olen := dig.GetDigestSize;
+  if (lenItem < 1) or (lenItem > olen) then
+    raise Exception.Create('Digest length out of range.');
+
+  SetLength(res, olen);
+  for var a in ar do
+    if Assigned(a) then // ignore nil entries
+      dig.BlockUpdate(a, 0, Length(a));
+  olen := dig.DoFinal(res, 0);
   SetLength(res, lenItem);
+
   result := TCryptoItem.Create(res);
-end;
-
-function TCryptoFacade.GenerateIV(const keyBtes, passBytes, saltBytes: TBytes)
-  : TCryptoItem;
-var
-  iv: TBytes;
-begin
-  SetLength(iv, AES_256_IV_LEN_BYTES);
-  result := TCryptoItem.Create(nil);
-end;
-
-function TCryptoFacade.GenerateKey(const parPass: TBytes;
-  const parSalt: TBytes = nil): TCryptoItem;
-var
-  arKey: TBytes;
-  dig: IDigest;
-  len: Int32;
-begin
-  SetLength(arKey, AES_256_KEY_LEN_BYTES);
-  dig := TDigestUtilities.GetDigest('SHA-256');
-  dig.BlockUpdate(parPass, 0, Length(parPass));
-  if Assigned(parSalt) then
-  begin
-    dig.BlockUpdate(parSalt, 0, Length(parSalt));
-  end;
-  len := dig.DoFinal(arKey, 0);
-  len := dig.GetDigestSize;
-  result := TCryptoItem.Create(arKey);
 end;
 
 function TCryptoFacade.GenKey32: TCryptoItem;
 var
   ar: TBytes;
-  e32: IBase32;
 begin
   SetLength(ar, 32);
   mGen.NextBytes(ar);
@@ -160,7 +142,7 @@ begin
   result := mGen.Next;
 end;
 
-{ TCryptoKey }
+{ TCryptoItem }
 
 constructor TCryptoItem.Create(const pItem: TBytes);
 begin
