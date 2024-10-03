@@ -2,7 +2,7 @@ object frmMain: TfrmMain
   Left = 0
   Top = 0
   Caption = 'frmMain'
-  ClientHeight = 442
+  ClientHeight = 572
   ClientWidth = 628
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
@@ -138,6 +138,23 @@ object frmMain: TfrmMain
     Width = 240
     Height = 23
     TabOrder = 6
+  end
+  object memoPlain: TMemo
+    Left = 41
+    Top = 104
+    Width = 552
+    Height = 73
+    Lines.Strings = (
+      'To be or not to be'
+      'That is the question. Like it or not.')
+    TabOrder = 7
+  end
+  object memoCypher: TMemo
+    Left = 40
+    Top = 432
+    Width = 553
+    Height = 105
+    TabOrder = 8
   end
   object alMain: TActionList
     Left = 544

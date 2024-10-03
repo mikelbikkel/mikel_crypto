@@ -1,0 +1,48 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{9E098603-27FB-47AB-B3DA-5DF529E13B3B}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="mikel_crypto.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="..\..\test_packages\xe11\test_mikel_Crypto.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="mikel_crypto">
+        <MSBuild Projects="mikel_crypto.dproj"/>
+    </Target>
+    <Target Name="mikel_crypto:Clean">
+        <MSBuild Projects="mikel_crypto.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="mikel_crypto:Make">
+        <MSBuild Projects="mikel_crypto.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="test_mikel_Crypto">
+        <MSBuild Projects="..\..\test_packages\xe11\test_mikel_Crypto.dproj"/>
+    </Target>
+    <Target Name="test_mikel_Crypto:Clean">
+        <MSBuild Projects="..\..\test_packages\xe11\test_mikel_Crypto.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="test_mikel_Crypto:Make">
+        <MSBuild Projects="..\..\test_packages\xe11\test_mikel_Crypto.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="mikel_crypto;test_mikel_Crypto"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="mikel_crypto:Clean;test_mikel_Crypto:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="mikel_crypto:Make;test_mikel_Crypto:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

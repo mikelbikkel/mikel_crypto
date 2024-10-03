@@ -28,6 +28,8 @@ type
     edtIV: TEdit;
     edtSalt: TEdit;
     Label6: TLabel;
+    memoPlain: TMemo;
+    memoCypher: TMemo;
     procedure FormCreate(Sender: TObject);
     procedure actGenKeyExecute(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
@@ -47,14 +49,29 @@ implementation
 
 procedure TfrmMain.actGenKeyExecute(Sender: TObject);
 var
-  s, k, iv: string;
+  cipher: TCryptoAES256CBC;
+  pc: PChar;
+  ar: TBytes;
+  ctext: TCryptoItem;
 begin
+  edtKey.Text := EmptyStr;
+  edtSalt.Text := EmptyStr;
+  edtIV.Text := EmptyStr;
+  memoCypher.Lines.Clear;
+
   mKey := mCrypto.GenKey32;
   edtKey.Text := mKey.Enc32;
-  mCrypto.EncodeAES256CBC(edtPassword.Text, chkSalt.Checked, s, k, iv);
-  edtKey.Text := k;
-  edtSalt.Text := s;
-  edtIV.Text := iv;
+  cipher := TCryptoAES256CBC.Create(edtPassword.Text, chkSalt.Checked);
+  edtKey.Text := cipher.Key.Enc32;
+  edtSalt.Text := cipher.Salt.Enc32;
+  edtIV.Text := cipher.iv.Enc32;
+
+  pc := memoPlain.Lines.GetText;
+  ar := TEncoding.UTF8.GetBytes(pc);
+  StrDispose(pc);
+  ctext := cipher.Encode(ar);
+  memoCypher.Lines.Add(ctext.Enc32);
+  cipher.Free;
 end;
 
 procedure TfrmMain.FormClose(Sender: TObject; var Action: TCloseAction);
