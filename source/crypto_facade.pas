@@ -1,3 +1,20 @@
+{ ******************************************************************************
+
+  Copyright (c) 2023 M van Delft.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+  ****************************************************************************** }
 unit crypto_facade;
 
 interface
@@ -5,146 +22,226 @@ interface
 uses System.SysUtils, ClpRandom;
 
 type
+  TCryptoEnvironment = class;
 
-  TCryptoItem = record
-    Item: TBytes;
-    Enc32: string;
-    constructor Create(const pItem: TBytes);
+  TCryptoHash = (chMD5, chSHA1, chSHA256, chSHA512);
+
+  THashName = record helper for TCryptoHash
+    function toString: string;
   end;
 
+  { block cipher key size  block size  IV size
+    AES-128     16 bytes   16 bytes    16 bytes
+    AES-192     24 bytes   16 bytes    16 bytes
+    AES-256     32 bytes   16 bytes    16 bytes
+    Triple DES  24 bytes   8 bytes     8 bytes
+
+    Hash algo. hash size
+    MD5        16 bytes 128 bit
+    SHA1       20 bytes 160 bit
+    SHA256     32 bytes 256 bit
+    SHA512     64 bytes 512 bits
+
+    For AES-256 you can use SHA256 to hash the key.
+  }
+
+  // TODO: AES192 / AES128.
+  // TODO: Enum for cipher names? Cipher interface?
+  // TODO:
   TCryptoAES256CBC = class
   strict private
+
   const
     // PKCS = Public-Key Cryptography Standards
     // https://datatracker.ietf.org/doc/html/rfc2898
-    PKCS5_SALT_LEN = Int32(8);
-    SALT_MAGIC_LEN = Int32(8);
-    // SALT_SIZE = Int32(8);
     SALT_MAGIC: String = 'Salted__';
-    AES_256_KEY_LEN_BYTES = 32;
+    SALT_MAGIC_LEN = Int32(8);
+    // AES_256_KEY_LEN_BYTES = 32;
     AES_256_IV_LEN_BYTES = 16;
     CRYPTO_NAME = 'AES/CBC/PKCS7PADDING';
 
   var
-    FPassword: string;
+    FEnv: TCryptoEnvironment;
     FUseSalt: boolean;
-    FGen: TRandom;
-    FSalt, FKey, FIv: TCryptoItem;
+    FSalt, FKey, FIv: TBytes;
 
-    function GenerateSalt: TBytes;
-    function GenerateHash(const digestname: string; const ar: array of TBytes;
-      const lenItem: integer): TCryptoItem;
   public
-    property Key: TCryptoItem read FKey;
-    property Salt: TCryptoItem read FSalt;
-    property IV: TCryptoItem read FIv;
-    constructor Create(const password: string; const useSalt: boolean);
+    property Key: TBytes read FKey;
+    property Salt: TBytes read FSalt;
+    property IV: TBytes read FIv;
+    constructor Create(const env: TCryptoEnvironment; const arPassword: TBytes;
+      const useSalt: boolean);
     destructor Destroy; override;
-    function Encode(const arPlain: TBytes): TCryptoItem;
+    function Encrypt(const arPlain: TBytes): TBytes;
   end;
 
-  TCryptoFacade = class
+  // Entry-point.
+  // DI for created items.
+  TCryptoEnvironment = class
   strict private
-    mGen: TRandom;
+    FGen: TRandom;
 
   public
     constructor Create;
     destructor Destroy; override;
     function GenRandomInt: Int32;
-    function GenKey32: TCryptoItem;
+    // Generate a key of 32 random bytes.
+    function GenKey32: TBytes;
+    function GenerateSalt: TBytes;
+    function GenerateHash(const ch: TCryptoHash; const ar: array of TBytes)
+      : TBytes; overload;
+    function GenerateHash(const ch: TCryptoHash; const data: string)
+      : TBytes; overload;
+
+    function GetCipherAES256CBC(const password: string; const useSalt: boolean)
+      : TCryptoAES256CBC;
+    function Base32_Encode(const data: TBytes): string;
+    function Base32_Decode(const data: string): TBytes;
+    function Base64_Encode(const data: TBytes): string;
+    function Base64_Decode(const data: string): TBytes;
   end;
 
 implementation
 
 uses ClpCipherUtilities, ClpIBufferedCipher, ClpIDigest, ClpDigestUtilities,
   ClpParameterUtilities, SbpBase32, ClpIKeyParameter, ClpIParametersWithIV,
-  ClpParametersWithIV;
+  ClpParametersWithIV, SbpBase64;
 
-constructor TCryptoFacade.Create;
+function TCryptoEnvironment.Base32_Decode(const data: string): TBytes;
 begin
-  mGen := TRandom.Create;
+  Result := TBase32.Rfc4648.Decode(data);
 end;
 
-destructor TCryptoFacade.Destroy;
+function TCryptoEnvironment.Base32_Encode(const data: TBytes): string;
 begin
-  if Assigned(mGen) then
+  Result := TBase32.Rfc4648.Encode(data, True);
+end;
+
+function TCryptoEnvironment.Base64_Decode(const data: string): TBytes;
+begin
+  Result := TBase64.UrlEncoding.Decode(data);
+end;
+
+function TCryptoEnvironment.Base64_Encode(const data: TBytes): string;
+begin
+  Result := TBase64.UrlEncoding.Encode(data);
+end;
+
+constructor TCryptoEnvironment.Create;
+begin
+  FGen := TRandom.Create;
+end;
+
+destructor TCryptoEnvironment.Destroy;
+begin
+  if Assigned(FGen) then
   begin
-    mGen.Free;
-    mGen := nil;
+    FGen.Free;
+    FGen := nil;
   end;
   inherited;
 end;
 
-function TCryptoFacade.GenKey32: TCryptoItem;
+function TCryptoEnvironment.GenerateHash(const ch: TCryptoHash;
+  const ar: array of TBytes): TBytes;
+var
+  res: TBytes;
+  dig: IDigest;
+  olen: integer;
+  dname: string;
+begin
+  // TODO: exception for invalid digest name
+  dname := ch.toString;
+  dig := TDigestUtilities.GetDigest(dname);
+  olen := dig.GetDigestSize;
+
+  SetLength(res, olen);
+  for var a in ar do
+    if Assigned(a) then // ignore nil entries
+      dig.BlockUpdate(a, 0, Length(a));
+
+  { olen := } dig.DoFinal(res, 0);
+  Result := res;
+end;
+
+function TCryptoEnvironment.GenerateHash(const ch: TCryptoHash;
+  const data: string): TBytes;
+var
+  arData: TBytes;
+  ar: array of TBytes;
+begin
+  arData := BytesOf(data);
+  ar := [arData];
+  Result := GenerateHash(ch, ar);
+end;
+
+function TCryptoEnvironment.GenKey32: TBytes;
 var
   ar: TBytes;
 begin
   SetLength(ar, 32);
-  mGen.NextBytes(ar);
-  result := TCryptoItem.Create(ar);
+  FGen.NextBytes(ar);
+  Result := ar;
 end;
 
-function TCryptoFacade.GenRandomInt: Int32;
+function TCryptoEnvironment.GenRandomInt: Int32;
 begin
-  result := mGen.Next;
+  Result := FGen.Next;
 end;
 
-{ TCryptoItem }
-
-constructor TCryptoItem.Create(const pItem: TBytes);
+function TCryptoEnvironment.GenerateSalt: TBytes;
+const
+  PKCS5_SALT_LEN = 8;
 begin
-  if Assigned(pItem) then
-  begin
-    Item := pItem;
-    Enc32 := TBase32.Rfc4648.Encode(Item, True);
-  end
-  else
-  begin
-    SetLength(Item, 0);
-    Enc32 := EmptyStr;
-  end;
+  System.SetLength(Result, PKCS5_SALT_LEN);
+  FGen.NextBytes(Result);
+end;
+
+function TCryptoEnvironment.GetCipherAES256CBC(const password: string;
+  const useSalt: boolean): TCryptoAES256CBC;
+var
+  arPassword: TBytes;
+begin
+  arPassword := BytesOf(password);
+  Result := TCryptoAES256CBC.Create(self, arPassword, useSalt);
 end;
 
 { TCryptoAES256CBC }
 {$REGION TCryptoAES256CBC }
 
-constructor TCryptoAES256CBC.Create(const password: string;
-  const useSalt: boolean);
+constructor TCryptoAES256CBC.Create(const env: TCryptoEnvironment;
+  const arPassword: TBytes; const useSalt: boolean);
 var
-  arSalt, arPassword, Buf: TBytes;
   ar: array of TBytes;
 begin
-  FGen := TRandom.Create;
-  FPassword := password;
+  FEnv := env;
   FUseSalt := useSalt;
-
-  arPassword := TEncoding.UTF8.GetBytes(FPassword);
 
   if FUseSalt then
   begin
-    arSalt := GenerateSalt;
-    FSalt := TCryptoItem.Create(arSalt);
+    // A salt makes a hash function look non-deterministic.
+    // Hash is not secret, must be stored [somewhere].
+    FSalt := FEnv.GenerateSalt;
   end
   else
   begin
-    arSalt := nil;
+    FSalt := nil;
   end;
 
-  ar := [arSalt, arPassword];
-  FKey := GenerateHash('SHA-256', ar, AES_256_KEY_LEN_BYTES);
+  ar := [FSalt, arPassword];
+  FKey := FEnv.GenerateHash(chSHA256, ar);
 
-  ar := [FKey.Item, arPassword, arSalt];
-  FIv := GenerateHash('SHA-256', ar, AES_256_IV_LEN_BYTES);
+  ar := [FKey, arPassword, FSalt];
+  FIv := FEnv.GenerateHash(chSHA256, ar);
+  SetLength(FIv, AES_256_IV_LEN_BYTES);
 end;
 
 destructor TCryptoAES256CBC.Destroy;
 begin
-  if Assigned(FGen) then
-    FGen.Free;
   inherited;
 end;
 
-function TCryptoAES256CBC.Encode(const arPlain: TBytes): TCryptoItem;
+function TCryptoAES256CBC.Encrypt(const arPlain: TBytes): TBytes;
 var
   cipher: IBufferedCipher;
   prmKey: IKeyParameter; // function GetKey(): TCryptoLibByteArray;
@@ -153,13 +250,14 @@ var
   arCipher: TBytes;
 begin
   cipher := TCipherUtilities.GetCipher(CRYPTO_NAME);
-  prmKey := TParameterUtilities.CreateKeyParameter('AES', Key.Item);
-  prmKeyIV := TParametersWithIV.Create(prmKey, IV.Item);
+  // AES + length(FKey) determine the AES-variant that is created.
+  prmKey := TParameterUtilities.CreateKeyParameter('AES', FKey);
+  prmKeyIV := TParametersWithIV.Create(prmKey, FIv);
 
   cipher.Init(True, prmKeyIV); // init encryption cipher
   BufLen := Length(arPlain) + cipher.GetBlockSize;
   if FUseSalt then
-    BufLen := BufLen + SALT_MAGIC_LEN + PKCS5_SALT_LEN;
+    BufLen := BufLen + SALT_MAGIC_LEN + Length(FSalt);
   SetLength(arCipher, BufLen);
   LBufStart := 0;
 
@@ -169,7 +267,7 @@ begin
   Count := cipher.DoFinal(arCipher, LBufStart);
   Inc(LBufStart, Count);
   SetLength(arCipher, LBufStart);
-  result := TCryptoItem.Create(arCipher);
+  Result := arCipher;
 
   {
     System.SetLength(arCypher, System.Length(plaintext) + LBlockSize +
@@ -189,35 +287,23 @@ begin
   }
 end;
 
-function TCryptoAES256CBC.GenerateHash(const digestname: string;
-  const ar: array of TBytes; const lenItem: integer): TCryptoItem;
-var
-  res: TBytes;
-  dig: IDigest;
-  olen: integer;
-  // MD5, digest length = 128 bits = 16 bytes. SHA-256 = 256 bits = 32 bytes
-begin
-  // TODO: exception for invalid digest name
-  dig := TDigestUtilities.GetDigest(digestname);
-  olen := dig.GetDigestSize;
-  if (lenItem < 1) or (lenItem > olen) then
-    raise Exception.Create('Digest length out of range.');
-
-  SetLength(res, olen);
-  for var a in ar do
-    if Assigned(a) then // ignore nil entries
-      dig.BlockUpdate(a, 0, Length(a));
-  olen := dig.DoFinal(res, 0);
-  SetLength(res, lenItem);
-
-  result := TCryptoItem.Create(res);
-end;
-
-function TCryptoAES256CBC.GenerateSalt: TBytes;
-begin
-  System.SetLength(result, PKCS5_SALT_LEN);
-  FGen.NextBytes(result);
-end;
 {$ENDREGION}
+
+{ THashName }
+function THashName.toString: string;
+begin
+  case self of
+    chMD5:
+      Result := 'MD5';
+    chSHA1:
+      Result := 'SHA-1';
+    chSHA256:
+      Result := 'SHA-256';
+    chSHA512:
+      Result := 'SHA-512';
+  else
+    Result := 'Error';
+  end;
+end;
 
 end.

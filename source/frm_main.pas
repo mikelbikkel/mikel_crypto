@@ -1,3 +1,20 @@
+{ ******************************************************************************
+
+  Copyright (c) 2023 M van Delft.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+  ****************************************************************************** }
 unit frm_main;
 
 interface
@@ -30,12 +47,12 @@ type
     Label6: TLabel;
     memoPlain: TMemo;
     memoCypher: TMemo;
+    Label7: TLabel;
     procedure FormCreate(Sender: TObject);
     procedure actGenKeyExecute(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
   private
-    mCrypto: TCryptoFacade;
-    mKey: TCryptoItem;
+    mCrypto: TCryptoEnvironment;
   public
     { Public declarations }
   end;
@@ -52,25 +69,26 @@ var
   cipher: TCryptoAES256CBC;
   pc: PChar;
   ar: TBytes;
-  ctext: TCryptoItem;
+  ctext: TBytes;
+  cntIn, cntOut: integer;
 begin
   edtKey.Text := EmptyStr;
   edtSalt.Text := EmptyStr;
   edtIV.Text := EmptyStr;
   memoCypher.Lines.Clear;
 
-  mKey := mCrypto.GenKey32;
-  edtKey.Text := mKey.Enc32;
-  cipher := TCryptoAES256CBC.Create(edtPassword.Text, chkSalt.Checked);
-  edtKey.Text := cipher.Key.Enc32;
-  edtSalt.Text := cipher.Salt.Enc32;
-  edtIV.Text := cipher.iv.Enc32;
+  cipher := mCrypto.GetCipherAES256CBC(edtPassword.Text, chkSalt.Checked);
+  edtKey.Text := mCrypto.Base32_Encode(cipher.Key);
+  edtSalt.Text := mCrypto.Base32_Encode(cipher.Salt);
+  edtIV.Text := mCrypto.Base32_Encode(cipher.iv);
 
   pc := memoPlain.Lines.GetText;
   ar := TEncoding.UTF8.GetBytes(pc);
+  cntIn := Length(ar);
   StrDispose(pc);
-  ctext := cipher.Encode(ar);
-  memoCypher.Lines.Add(ctext.Enc32);
+  ctext := cipher.Encrypt(ar);
+  cntOut := Length(ctext);
+  memoCypher.Lines.Add(mCrypto.Base32_Encode(ctext));
   cipher.Free;
 end;
 
@@ -95,7 +113,7 @@ const
 begin
   ReportMemoryLeaksOnShutdown := true;
 
-  mCrypto := TCryptoFacade.Create;
+  mCrypto := TCryptoEnvironment.Create;
   rnd := mCrypto.GenRandomInt;
   ca_a.Caption := S_A_UPPER + ' - ' + S_A_LOWER + ' - ' + S_EURO + ' - ' +
     S_GAL_C + ' ] ' + IntToStr(rnd);

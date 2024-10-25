@@ -76,6 +76,13 @@ object frmMain: TfrmMain
     Height = 15
     Caption = 'Generated salt:'
   end
+  object Label7: TLabel
+    Left = 41
+    Top = 438
+    Width = 61
+    Height = 15
+    Caption = 'Cipher text:'
+  end
   object Button1: TButton
     Left = 188
     Top = 281
@@ -150,8 +157,8 @@ object frmMain: TfrmMain
     TabOrder = 7
   end
   object memoCypher: TMemo
-    Left = 40
-    Top = 432
+    Left = 41
+    Top = 459
     Width = 553
     Height = 105
     TabOrder = 8
