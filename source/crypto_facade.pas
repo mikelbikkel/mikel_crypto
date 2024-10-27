@@ -19,12 +19,14 @@ unit crypto_facade;
 
 interface
 
-uses System.SysUtils, ClpRandom;
+uses System.SysUtils, ClpRandom, ClpIBufferedCipher;
 
 type
   TCryptoEnvironment = class;
 
   TCryptoHash = (chMD5, chSHA1, chSHA256, chSHA512);
+  TCryptoEncoding = (cbBase64, cbBase32);
+  TCryptoAES = (caAES128, caAES192, caAES256);
 
   THashName = record helper for TCryptoHash
     function toString: string;
@@ -43,36 +45,49 @@ type
     SHA512     64 bytes 512 bits
 
     For AES-256 you can use SHA256 to hash the key.
+    For the others? Truncate the key to the desired length?
+
+    https://www.highgo.ca/2019/08/08/the-difference-in-five-modes-in-the-aes-encryption-algorithm/
+    AES modes.
+    For block: CBC or ECB. Padding: PKCS5 or PKCS7
+    Electronic Code Book - weak. Not recommended.
+    Cipher Block Chaining
+    using an initialization vector – IV. The IV has the same size as the block that is encrypted. In general, the IV usually is a random number, not a nonce.
+    output of block X is XORed with input of block X+1.
+    For first block, XOR with IV.
+    For stream: CFB (needs IV), OFB (needs IV), CTR (needs an initial counter value as an IV)
+    Stream modes do not need padding.
   }
 
   // TODO: AES192 / AES128.
   // TODO: Enum for cipher names? Cipher interface?
   // TODO:
-  TCryptoAES256CBC = class
+  TCryptoAESCBC = class
   strict private
 
   const
     // PKCS = Public-Key Cryptography Standards
     // https://datatracker.ietf.org/doc/html/rfc2898
-    SALT_MAGIC: String = 'Salted__';
-    SALT_MAGIC_LEN = Int32(8);
-    // AES_256_KEY_LEN_BYTES = 32;
-    AES_256_IV_LEN_BYTES = 16;
+    // SALT_MAGIC: String = 'Salted__';
+    // SALT_MAGIC_LEN = Int32(8);
     CRYPTO_NAME = 'AES/CBC/PKCS7PADDING';
 
   var
+    FAESLength: TCryptoAES;
     FEnv: TCryptoEnvironment;
     FUseSalt: boolean;
     FSalt, FKey, FIv: TBytes;
-
+    function InternalCreateCipher(forEncrypt: boolean): IBufferedCipher;
   public
     property Key: TBytes read FKey;
     property Salt: TBytes read FSalt;
     property IV: TBytes read FIv;
     constructor Create(const env: TCryptoEnvironment; const arPassword: TBytes;
-      const useSalt: boolean);
+      const useSalt: boolean; const aesType: TCryptoAES = caAES256);
     destructor Destroy; override;
+    // TODO: user string for plaintext? Call ENV to xlt between string and tbytes.
     function Encrypt(const arPlain: TBytes): TBytes;
+    function Decrypt(const arCipher: TBytes): TBytes;
   end;
 
   // Entry-point.
@@ -93,38 +108,47 @@ type
     function GenerateHash(const ch: TCryptoHash; const data: string)
       : TBytes; overload;
 
-    function GetCipherAES256CBC(const password: string; const useSalt: boolean)
-      : TCryptoAES256CBC;
-    function Base32_Encode(const data: TBytes): string;
-    function Base32_Decode(const data: string): TBytes;
-    function Base64_Encode(const data: TBytes): string;
-    function Base64_Decode(const data: string): TBytes;
+    function GetCipherAESCBC(const password: string; const useSalt: boolean;
+      const aesType: TCryptoAES = caAES256): TCryptoAESCBC;
+    // Nil returns an empty string.
+    function BaseEncode(const enc: TCryptoEncoding; const data: TBytes): string;
+    // EmtyStr returns a zero-length byte array
+    function BaseDecode(const enc: TCryptoEncoding; const data: string): TBytes;
   end;
 
 implementation
 
-uses ClpCipherUtilities, ClpIBufferedCipher, ClpIDigest, ClpDigestUtilities,
+uses ClpCipherUtilities, ClpIDigest, ClpDigestUtilities,
   ClpParameterUtilities, SbpBase32, ClpIKeyParameter, ClpIParametersWithIV,
   ClpParametersWithIV, SbpBase64;
 
-function TCryptoEnvironment.Base32_Decode(const data: string): TBytes;
+{ TCryptoEnvironment }
+{$REGION TCryptoEnvironment }
+
+function TCryptoEnvironment.BaseDecode(const enc: TCryptoEncoding;
+  const data: string): TBytes;
 begin
-  Result := TBase32.Rfc4648.Decode(data);
+  case enc of
+    cbBase64:
+      Result := TBase64.UrlEncoding.Decode(data);
+    cbBase32:
+      Result := TBase32.Rfc4648.Decode(data);
+  else
+    raise Exception.Create('Unknown TCryptoEncoding');
+  end;
 end;
 
-function TCryptoEnvironment.Base32_Encode(const data: TBytes): string;
+function TCryptoEnvironment.BaseEncode(const enc: TCryptoEncoding;
+  const data: TBytes): string;
 begin
-  Result := TBase32.Rfc4648.Encode(data, True);
-end;
-
-function TCryptoEnvironment.Base64_Decode(const data: string): TBytes;
-begin
-  Result := TBase64.UrlEncoding.Decode(data);
-end;
-
-function TCryptoEnvironment.Base64_Encode(const data: TBytes): string;
-begin
-  Result := TBase64.UrlEncoding.Encode(data);
+  case enc of
+    cbBase64:
+      Result := TBase64.UrlEncoding.Encode(data);
+    cbBase32:
+      Result := TBase32.Rfc4648.Encode(data, True);
+  else
+    raise Exception.Create('Unknown TCryptoEncoding');
+  end;
 end;
 
 constructor TCryptoEnvironment.Create;
@@ -197,23 +221,28 @@ begin
   FGen.NextBytes(Result);
 end;
 
-function TCryptoEnvironment.GetCipherAES256CBC(const password: string;
-  const useSalt: boolean): TCryptoAES256CBC;
+function TCryptoEnvironment.GetCipherAESCBC(const password: string;
+  const useSalt: boolean; const aesType: TCryptoAES): TCryptoAESCBC;
 var
   arPassword: TBytes;
 begin
   arPassword := BytesOf(password);
-  Result := TCryptoAES256CBC.Create(self, arPassword, useSalt);
+  Result := TCryptoAESCBC.Create(self, arPassword, useSalt);
 end;
 
+{$ENDREGION}
 { TCryptoAES256CBC }
 {$REGION TCryptoAES256CBC }
 
-constructor TCryptoAES256CBC.Create(const env: TCryptoEnvironment;
-  const arPassword: TBytes; const useSalt: boolean);
+constructor TCryptoAESCBC.Create(const env: TCryptoEnvironment;
+  const arPassword: TBytes; const useSalt: boolean; const aesType: TCryptoAES);
 var
   ar: array of TBytes;
+  keyLength: integer;
+const
+  AES_IV_LEN_BYTES = 16; // for 256, 192 and 128
 begin
+  FAESLength := aesType;
   FEnv := env;
   FUseSalt := useSalt;
 
@@ -230,61 +259,106 @@ begin
 
   ar := [FSalt, arPassword];
   FKey := FEnv.GenerateHash(chSHA256, ar);
+  case FAESLength of
+    caAES128:
+      keyLength := 16;
+    caAES192:
+      keyLength := 24;
+    caAES256:
+      keyLength := 32;
+  else
+    raise Exception.Create('Unknown AES length');
+  end;
+  SetLength(FKey, keyLength);
 
   ar := [FKey, arPassword, FSalt];
   FIv := FEnv.GenerateHash(chSHA256, ar);
-  SetLength(FIv, AES_256_IV_LEN_BYTES);
+  SetLength(FIv, AES_IV_LEN_BYTES);
 end;
 
-destructor TCryptoAES256CBC.Destroy;
+function TCryptoAESCBC.Decrypt(const arCipher: TBytes): TBytes;
+var
+  cipher: IBufferedCipher;
+  BufCounter, Count, BufLen: Int32;
+  arPlain: TBytes;
+begin
+  cipher := InternalCreateCipher(false);
+
+  BufLen := Length(arCipher);
+  SetLength(arPlain, BufLen);
+  BufCounter := 0;
+
+  Count := cipher.ProcessBytes(arCipher, 0, BufLen, arPlain, BufCounter);
+  Inc(BufCounter, Count); // BufCounter := BufCounter + Count;
+  Count := cipher.DoFinal(arPlain, BufCounter);
+  Inc(BufCounter, Count);
+
+  SetLength(arPlain, BufCounter);
+  Result := arPlain;
+end;
+
+destructor TCryptoAESCBC.Destroy;
 begin
   inherited;
 end;
 
-function TCryptoAES256CBC.Encrypt(const arPlain: TBytes): TBytes;
+function TCryptoAESCBC.Encrypt(const arPlain: TBytes): TBytes;
 var
   cipher: IBufferedCipher;
-  prmKey: IKeyParameter; // function GetKey(): TCryptoLibByteArray;
-  prmKeyIV: IParametersWithIV;
-  LBufStart, Count, BufLen: Int32;
+  BufCounter, Count, BufLen: Int32;
   arCipher: TBytes;
 begin
-  cipher := TCipherUtilities.GetCipher(CRYPTO_NAME);
-  // AES + length(FKey) determine the AES-variant that is created.
-  prmKey := TParameterUtilities.CreateKeyParameter('AES', FKey);
-  prmKeyIV := TParametersWithIV.Create(prmKey, FIv);
-
-  cipher.Init(True, prmKeyIV); // init encryption cipher
+  cipher := InternalCreateCipher(True);
   BufLen := Length(arPlain) + cipher.GetBlockSize;
-  if FUseSalt then
-    BufLen := BufLen + SALT_MAGIC_LEN + Length(FSalt);
+  // if FUseSalt then
+  // BufLen := BufLen + SALT_MAGIC_LEN + Length(FSalt);
   SetLength(arCipher, BufLen);
-  LBufStart := 0;
+  BufCounter := 0;
 
   Count := cipher.ProcessBytes(arPlain, 0, Length(arPlain), arCipher,
-    LBufStart);
-  Inc(LBufStart, Count);
-  Count := cipher.DoFinal(arCipher, LBufStart);
-  Inc(LBufStart, Count);
-  SetLength(arCipher, LBufStart);
+    BufCounter);
+  Inc(BufCounter, Count);
+  Count := cipher.DoFinal(arCipher, BufCounter);
+  Inc(BufCounter, Count);
+  SetLength(arCipher, BufCounter);
   Result := arCipher;
 
   {
     System.SetLength(arCypher, System.Length(plaintext) + LBlockSize +
     SALT_MAGIC_LEN + PKCS5_SALT_LEN);
 
-    LBufStart := 0;
+    BufCounter := 0;
 
     if useSalt then
     begin
     // System.Move(TConverters.ConvertStringToBytes(SALT_MAGIC, TEncoding.UTF8)[0],
-    // Buf[LBufStart], SALT_MAGIC_LEN * System.SizeOf(Byte));
-    System.Inc(LBufStart, SALT_MAGIC_LEN);
-    // System.Move(SaltBytes[0], Buf[LBufStart],
+    // Buf[BufCounter], SALT_MAGIC_LEN * System.SizeOf(Byte));
+    System.Inc(BufCounter, SALT_MAGIC_LEN);
+    // System.Move(SaltBytes[0], Buf[BufCounter],
     // PKCS5_SALT_LEN * System.SizeOf(Byte));
-    System.Inc(LBufStart, PKCS5_SALT_LEN);
+    System.Inc(BufCounter, PKCS5_SALT_LEN);
     end;
   }
+end;
+
+function TCryptoAESCBC.InternalCreateCipher(forEncrypt: boolean)
+  : IBufferedCipher;
+var
+  cipher: IBufferedCipher;
+  prmKey: IKeyParameter; // function GetKey(): TCryptoLibByteArray;
+  prmKeyIV: IParametersWithIV;
+begin
+  // Decrypt items: Salt. Either user input or remembered (FPassword).
+  // IV: can be derived. Or remembered (FIv)
+  // Salt: Remember if Salt was used and if so, what the value was (FSalt)
+
+  cipher := TCipherUtilities.GetCipher(CRYPTO_NAME);
+  // AES + length(FKey) determine the AES-variant that is created.
+  prmKey := TParameterUtilities.CreateKeyParameter('AES', FKey);
+  prmKeyIV := TParametersWithIV.Create(prmKey, FIv);
+
+  cipher.Init(forEncrypt, prmKeyIV); // init encryption cipher
+  Result := cipher;
 end;
 
 {$ENDREGION}

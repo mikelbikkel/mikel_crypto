@@ -66,7 +66,7 @@ implementation
 
 procedure TfrmMain.actGenKeyExecute(Sender: TObject);
 var
-  cipher: TCryptoAES256CBC;
+  cipher: TCryptoAESCBC;
   pc: PChar;
   ar: TBytes;
   ctext: TBytes;
@@ -77,10 +77,10 @@ begin
   edtIV.Text := EmptyStr;
   memoCypher.Lines.Clear;
 
-  cipher := mCrypto.GetCipherAES256CBC(edtPassword.Text, chkSalt.Checked);
-  edtKey.Text := mCrypto.Base32_Encode(cipher.Key);
-  edtSalt.Text := mCrypto.Base32_Encode(cipher.Salt);
-  edtIV.Text := mCrypto.Base32_Encode(cipher.iv);
+  cipher := mCrypto.GetCipherAESCBC(edtPassword.Text, chkSalt.Checked);
+  edtKey.Text := mCrypto.BaseEncode(cbBase32, cipher.Key);
+  edtSalt.Text := mCrypto.BaseEncode(cbBase32, cipher.Salt);
+  edtIV.Text := mCrypto.BaseEncode(cbBase32, cipher.iv);
 
   pc := memoPlain.Lines.GetText;
   ar := TEncoding.UTF8.GetBytes(pc);
@@ -88,7 +88,7 @@ begin
   StrDispose(pc);
   ctext := cipher.Encrypt(ar);
   cntOut := Length(ctext);
-  memoCypher.Lines.Add(mCrypto.Base32_Encode(ctext));
+  memoCypher.Lines.Add(mCrypto.BaseEncode(cbBase32, ctext));
   cipher.Free;
 end;
 
