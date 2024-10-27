@@ -2,7 +2,7 @@ object frmMain: TfrmMain
   Left = 0
   Top = 0
   Caption = 'frmMain'
-  ClientHeight = 572
+  ClientHeight = 660
   ClientWidth = 628
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
@@ -56,44 +56,44 @@ object frmMain: TfrmMain
     Caption = 'Crypto Algorithm: '
   end
   object Label4: TLabel
-    Left = 49
-    Top = 363
+    Left = 48
+    Top = 299
     Width = 81
     Height = 15
     Caption = 'Generated key: '
   end
   object Label5: TLabel
-    Left = 49
-    Top = 392
+    Left = 48
+    Top = 328
     Width = 73
     Height = 15
     Caption = 'Generated IV: '
   end
   object Label6: TLabel
-    Left = 49
-    Top = 334
+    Left = 48
+    Top = 270
     Width = 78
     Height = 15
     Caption = 'Generated salt:'
   end
   object Label7: TLabel
-    Left = 41
-    Top = 438
+    Left = 40
+    Top = 374
     Width = 61
     Height = 15
     Caption = 'Cipher text:'
   end
   object Button1: TButton
-    Left = 188
-    Top = 281
+    Left = 340
+    Top = 16
     Width = 93
     Height = 33
     Action = actGenKey
     TabOrder = 0
   end
   object edtKey: TEdit
-    Left = 145
-    Top = 360
+    Left = 144
+    Top = 296
     Width = 448
     Height = 23
     ReadOnly = True
@@ -132,16 +132,16 @@ object frmMain: TfrmMain
       'aes-256-cbc')
   end
   object edtIV: TEdit
-    Left = 145
-    Top = 389
+    Left = 144
+    Top = 325
     Width = 448
     Height = 23
     ReadOnly = True
     TabOrder = 5
   end
   object edtSalt: TEdit
-    Left = 145
-    Top = 331
+    Left = 144
+    Top = 267
     Width = 240
     Height = 23
     TabOrder = 6
@@ -157,18 +157,39 @@ object frmMain: TfrmMain
     TabOrder = 7
   end
   object memoCypher: TMemo
-    Left = 41
-    Top = 459
+    Left = 40
+    Top = 395
     Width = 553
     Height = 105
     TabOrder = 8
+  end
+  object memoDecrypt: TMemo
+    Left = 41
+    Top = 552
+    Width = 552
+    Height = 89
+    Lines.Strings = (
+      'memoDecrypt')
+    TabOrder = 9
+  end
+  object btnDecrypt: TButton
+    Left = 440
+    Top = 506
+    Width = 75
+    Height = 31
+    Action = actDecrypt
+    TabOrder = 10
   end
   object alMain: TActionList
     Left = 544
     Top = 24
     object actGenKey: TAction
-      Caption = 'Generate key'
+      Caption = 'Encrypt'
       OnExecute = actGenKeyExecute
+    end
+    object actDecrypt: TAction
+      Caption = 'Decrypt'
+      OnExecute = actDecryptExecute
     end
   end
 end

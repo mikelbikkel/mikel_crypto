@@ -21,6 +21,11 @@ interface
 
 uses System.SysUtils, ClpRandom, ClpIBufferedCipher;
 
+resourcestring
+  SUnknownTCryptoEncoding = 'Unknown TCryptoEncoding';
+  SUnknownAESLength = 'Unknown AES length';
+  SUnknownHashName = 'Unknown HashName';
+
 type
   TCryptoEnvironment = class;
 
@@ -47,6 +52,10 @@ type
     For AES-256 you can use SHA256 to hash the key.
     For the others? Truncate the key to the desired length?
 
+    Stream ciphers convert one symbol of plaintext directly into a
+    symbol of ciphertext.
+    Block ciphers encrypt a group of plaintext symbols as one block.
+    Most modern symmetric encryption algorithms are block ciphers.
     https://www.highgo.ca/2019/08/08/the-difference-in-five-modes-in-the-aes-encryption-algorithm/
     AES modes.
     For block: CBC or ECB. Padding: PKCS5 or PKCS7
@@ -57,6 +66,8 @@ type
     For first block, XOR with IV.
     For stream: CFB (needs IV), OFB (needs IV), CTR (needs an initial counter value as an IV)
     Stream modes do not need padding.
+
+    PKCS#5 padding is defined for 8-byte block sizes, PKCS#7 padding would work for any block size from 1 to 255 bytes.
   }
 
   // TODO: AES192 / AES128.
@@ -96,6 +107,9 @@ type
   strict private
     FGen: TRandom;
 
+    function GenAES_PKCS52(forEncrypt: boolean; const aesType: TCryptoAES;
+      const arPwd, arSalt: TBytes; const iter: integer): IBufferedCipher;
+
   public
     constructor Create;
     destructor Destroy; override;
@@ -116,13 +130,16 @@ type
     function BaseDecode(const enc: TCryptoEncoding; const data: string): TBytes;
   end;
 
+
+
 implementation
 
-uses ClpCipherUtilities, ClpIDigest, ClpDigestUtilities,
+uses ClpCipherUtilities, ClpIDigest, ClpDigestUtilities, ClpICipherParameters,
   ClpParameterUtilities, SbpBase32, ClpIKeyParameter, ClpIParametersWithIV,
-  ClpParametersWithIV, SbpBase64;
+  ClpParametersWithIV, SbpBase64, ClpPkcs5S2ParametersGenerator;
 
-{ TCryptoEnvironment }
+
+  { TCryptoEnvironment }
 {$REGION TCryptoEnvironment }
 
 function TCryptoEnvironment.BaseDecode(const enc: TCryptoEncoding;
@@ -134,7 +151,7 @@ begin
     cbBase32:
       Result := TBase32.Rfc4648.Decode(data);
   else
-    raise Exception.Create('Unknown TCryptoEncoding');
+    raise Exception.Create(SUnknownTCryptoEncoding);
   end;
 end;
 
@@ -147,7 +164,7 @@ begin
     cbBase32:
       Result := TBase32.Rfc4648.Encode(data, True);
   else
-    raise Exception.Create('Unknown TCryptoEncoding');
+    raise Exception.Create(SUnknownTCryptoEncoding);
   end;
 end;
 
@@ -199,6 +216,34 @@ begin
   Result := GenerateHash(ch, ar);
 end;
 
+function TCryptoEnvironment.GenAES_PKCS52(forEncrypt: boolean;
+  const aesType: TCryptoAES; const arPwd, arSalt: TBytes; const iter: integer)
+  : IBufferedCipher;
+var
+  dig: IDigest;
+  pgen: TPkcs5S2ParametersGenerator;
+  params: ICipherParameters;
+  keyLength: integer;
+begin
+  dig := TDigestUtilities.GetDigest('SHA-256');
+  pgen := TPkcs5S2ParametersGenerator.Create(dig);
+  pgen.Init(arPwd, arSalt, iter);
+  case aesType of
+    caAES128:
+      keyLength := 16;
+    caAES192:
+      keyLength := 24;
+    caAES256:
+      keyLength := 32;
+  else
+    raise Exception.Create(SUnknownAESLength);
+  end;
+
+  params := pgen.GenerateDerivedParameters('AES', keyLength, 16);
+  Result := TCipherUtilities.GetCipher('AES/CBC/PKCS7PADDING');
+  Result.Init(forEncrypt, params);
+end;
+
 function TCryptoEnvironment.GenKey32: TBytes;
 var
   ar: TBytes;
@@ -220,6 +265,8 @@ begin
   System.SetLength(Result, PKCS5_SALT_LEN);
   FGen.NextBytes(Result);
 end;
+
+
 
 function TCryptoEnvironment.GetCipherAESCBC(const password: string;
   const useSalt: boolean; const aesType: TCryptoAES): TCryptoAESCBC;
@@ -267,7 +314,7 @@ begin
     caAES256:
       keyLength := 32;
   else
-    raise Exception.Create('Unknown AES length');
+    raise Exception.Create(SUnknownAESLength);
   end;
   SetLength(FKey, keyLength);
 
@@ -299,6 +346,7 @@ end;
 
 destructor TCryptoAESCBC.Destroy;
 begin
+  FEnv := nil;
   inherited;
 end;
 
@@ -310,8 +358,6 @@ var
 begin
   cipher := InternalCreateCipher(True);
   BufLen := Length(arPlain) + cipher.GetBlockSize;
-  // if FUseSalt then
-  // BufLen := BufLen + SALT_MAGIC_LEN + Length(FSalt);
   SetLength(arCipher, BufLen);
   BufCounter := 0;
 
@@ -322,23 +368,6 @@ begin
   Inc(BufCounter, Count);
   SetLength(arCipher, BufCounter);
   Result := arCipher;
-
-  {
-    System.SetLength(arCypher, System.Length(plaintext) + LBlockSize +
-    SALT_MAGIC_LEN + PKCS5_SALT_LEN);
-
-    BufCounter := 0;
-
-    if useSalt then
-    begin
-    // System.Move(TConverters.ConvertStringToBytes(SALT_MAGIC, TEncoding.UTF8)[0],
-    // Buf[BufCounter], SALT_MAGIC_LEN * System.SizeOf(Byte));
-    System.Inc(BufCounter, SALT_MAGIC_LEN);
-    // System.Move(SaltBytes[0], Buf[BufCounter],
-    // PKCS5_SALT_LEN * System.SizeOf(Byte));
-    System.Inc(BufCounter, PKCS5_SALT_LEN);
-    end;
-  }
 end;
 
 function TCryptoAESCBC.InternalCreateCipher(forEncrypt: boolean)
@@ -352,6 +381,12 @@ begin
   // IV: can be derived. Or remembered (FIv)
   // Salt: Remember if Salt was used and if so, what the value was (FSalt)
 
+  // DK = KDF (P, S)
+  // If the salt is 64 bits long, for instance, there will be as many as 2^64 keys for each password.
+
+  // In a password-based key derivation function, the
+  // base key is a password and the other parameters are a salt value and
+  // an iteration count,
   cipher := TCipherUtilities.GetCipher(CRYPTO_NAME);
   // AES + length(FKey) determine the AES-variant that is created.
   prmKey := TParameterUtilities.CreateKeyParameter('AES', FKey);
@@ -376,8 +411,9 @@ begin
     chSHA512:
       Result := 'SHA-512';
   else
-    Result := 'Error';
+    Result := SUnknownHashName;
   end;
 end;
+
 
 end.

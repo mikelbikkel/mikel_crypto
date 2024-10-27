@@ -48,11 +48,16 @@ type
     memoPlain: TMemo;
     memoCypher: TMemo;
     Label7: TLabel;
+    memoDecrypt: TMemo;
+    actDecrypt: TAction;
+    btnDecrypt: TButton;
     procedure FormCreate(Sender: TObject);
     procedure actGenKeyExecute(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure actDecryptExecute(Sender: TObject);
   private
     mCrypto: TCryptoEnvironment;
+    FCipher: TCryptoAESCBC;
   public
     { Public declarations }
   end;
@@ -64,41 +69,48 @@ implementation
 
 {$R *.dfm}
 
+procedure TfrmMain.actDecryptExecute(Sender: TObject);
+var
+  arCipher: TBytes;
+  arPlain: TBytes;
+begin
+  if not Assigned(FCipher) then
+    Exit;
+
+  arCipher := mCrypto.BaseDecode(cbBase32, memoCypher.Lines.Text);
+  arPlain := FCipher.Decrypt(arCipher);
+  memoDecrypt.Lines.Text := StringOf(arPlain);
+end;
+
 procedure TfrmMain.actGenKeyExecute(Sender: TObject);
 var
-  cipher: TCryptoAESCBC;
   pc: PChar;
   ar: TBytes;
   ctext: TBytes;
-  cntIn, cntOut: integer;
 begin
   edtKey.Text := EmptyStr;
   edtSalt.Text := EmptyStr;
   edtIV.Text := EmptyStr;
   memoCypher.Lines.Clear;
+  memoDecrypt.Lines.Clear;
 
-  cipher := mCrypto.GetCipherAESCBC(edtPassword.Text, chkSalt.Checked);
-  edtKey.Text := mCrypto.BaseEncode(cbBase32, cipher.Key);
-  edtSalt.Text := mCrypto.BaseEncode(cbBase32, cipher.Salt);
-  edtIV.Text := mCrypto.BaseEncode(cbBase32, cipher.iv);
+  if not Assigned(FCipher) then
+    FCipher := mCrypto.GetCipherAESCBC(edtPassword.Text, chkSalt.Checked);
 
-  pc := memoPlain.Lines.GetText;
-  ar := TEncoding.UTF8.GetBytes(pc);
-  cntIn := Length(ar);
-  StrDispose(pc);
-  ctext := cipher.Encrypt(ar);
-  cntOut := Length(ctext);
+  edtKey.Text := mCrypto.BaseEncode(cbBase32, FCipher.Key);
+  edtSalt.Text := mCrypto.BaseEncode(cbBase32, FCipher.Salt);
+  edtIV.Text := mCrypto.BaseEncode(cbBase32, FCipher.iv);
+
+  ctext := FCipher.Encrypt(ar);
   memoCypher.Lines.Add(mCrypto.BaseEncode(cbBase32, ctext));
-  cipher.Free;
 end;
 
 procedure TfrmMain.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
+  if Assigned(FCipher) then
+    FreeAndNil(FCipher);
   if Assigned(mCrypto) then
-  begin
-    mCrypto.Free;
-    mCrypto := nil;
-  end;
+    FreeAndNil(mCrypto);
 end;
 
 procedure TfrmMain.FormCreate(Sender: TObject);
