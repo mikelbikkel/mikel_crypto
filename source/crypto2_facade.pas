@@ -66,9 +66,21 @@ type
 implementation
 
 uses ClpIBufferedCipher, ClpCipherUtilities, ClpIDigest, ClpDigestUtilities,
-  ClpICipherParameters, ClpPkcs5S2ParametersGenerator, System.Math, ClpRandom;
+  ClpICipherParameters, ClpPkcs5S2ParametersGenerator, System.Math, ClpRandom,
+  ClpHMac;
 
 type
+
+  TMC2HMACImp = class
+  strict private
+    FGen: THMac;
+  public
+    constructor Create(const arPwd: TBytes; const params: TCrypto2AESParams);
+    destructor Destroy; override;
+    // Message Authentication code
+    function GenerateMAC(const arPlain: TBytes): TBytes;
+
+  end;
 
   TCryptoAESImp = class(TInterfacedObject, ICryptoAES)
   strict private
@@ -102,11 +114,9 @@ constructor TCryptoAESImp.Create(const arPwd: TBytes;
 var
   dig: IDigest;
   pgen: TPkcs5S2ParametersGenerator;
-  len: integer;
 begin
   dig := nil;
   pgen := nil;
-  len := 0;
   try
     // sha256 digest is 32 bytes long. Long enough to support the AES256 key-size
     // (also 32 bytes).
@@ -205,6 +215,49 @@ end;
 function TCrypto2AESParams.getLenKeyBits: integer;
 begin
   Result := FKeyLength * 8;
+end;
+
+{ TMC2HMACImp }
+
+constructor TMC2HMACImp.Create(const arPwd: TBytes;
+  const params: TCrypto2AESParams);
+var
+  dig: IDigest;
+  pgen: TPkcs5S2ParametersGenerator;
+  cp: ICipherParameters;
+begin
+  dig := nil;
+  pgen := nil;
+  try
+    dig := TDigestUtilities.GetDigest('SHA-256');
+    pgen := TPkcs5S2ParametersGenerator.Create(dig);
+    pgen.Init(arPwd, params.salt, params.iter);
+
+    cp := pgen.GenerateDerivedMacParameters(params.lenKeyBits);
+    FGen := THMac.Create(dig);
+    FGen.Init(cp);
+  finally
+    if Assigned(pgen) then
+      FreeAndNil(pgen);
+  end;
+end;
+
+destructor TMC2HMACImp.Destroy;
+begin
+  FGen := nil;
+  inherited;
+end;
+
+function TMC2HMACImp.GenerateMAC(const arPlain: TBytes): TBytes;
+var
+  res: TBytes;
+  olen: integer;
+begin
+  olen := FGen.GetUnderlyingDigest.GetDigestSize;
+  SetLength(res, olen);
+  FGen.BlockUpdate(arPlain, 0, Length(arPlain));
+  { olen := } FGen.DoFinal(res, 0);
+  Result := res;
 end;
 
 end.
