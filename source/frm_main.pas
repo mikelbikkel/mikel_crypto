@@ -84,7 +84,6 @@ end;
 
 procedure TfrmMain.actGenKeyExecute(Sender: TObject);
 var
-  pc: PChar;
   ar: TBytes;
   ctext: TBytes;
 begin
@@ -101,6 +100,7 @@ begin
   edtSalt.Text := mCrypto.BaseEncode(cbBase32, FCipher.Salt);
   edtIV.Text := mCrypto.BaseEncode(cbBase32, FCipher.iv);
 
+  ar := BytesOf(memoPlain.Lines.Text);
   ctext := FCipher.Encrypt(ar);
   memoCypher.Lines.Add(mCrypto.BaseEncode(cbBase32, ctext));
 end;

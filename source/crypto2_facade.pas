@@ -33,16 +33,38 @@ type
     function Decrypt(const arCipher: TBytes): TBytes;
   end;
 
+  // Separate class for aestype, salt, iter. These must be re-used.
+  // Do not store password info.
+  // This class generates the salt.
+  // After creation, this thing is immutable.
+  TCrypto2AESParams = class
+  strict private
+    FAES: TCrypto2AES;
+    FSalt: TBytes;
+    FIter: integer;
+    FKeyLength: integer;
+    FIVLength: integer;
+
+  public
+    constructor Create(const aes: TCrypto2AES; const iter: integer);
+    property aes: TCrypto2AES read FAES;
+    property salt: TBytes read FSalt;
+    property iter: integer read FIter;
+    property lenKey: integer read FKeyLength;
+    property lenIV: integer read FIVLength;
+  end;
+
   TCrypto2Environment = class
   public
-    function GetAES(const aesType: TCrypto2AES; const arPwd, arSalt: TBytes;
-      const iter: integer): ICryptoAES;
+    // Factory to create an AES/CBC/PKCS7PADDING cipher
+    function GetAES(const arPwd: TBytes; const params: TCrypto2AESParams)
+      : ICryptoAES;
   end;
 
 implementation
 
 uses ClpIBufferedCipher, ClpCipherUtilities, ClpIDigest, ClpDigestUtilities,
-  ClpICipherParameters, ClpPkcs5S2ParametersGenerator;
+  ClpICipherParameters, ClpPkcs5S2ParametersGenerator, System.Math, ClpRandom;
 
 type
 
@@ -51,8 +73,7 @@ type
     FCipher: IBufferedCipher;
     FParams: ICipherParameters;
   public
-    constructor Create(const aesType: TCrypto2AES; const arPwd, arSalt: TBytes;
-      const iter: integer);
+    constructor Create(const arPwd: TBytes; const params: TCrypto2AESParams);
     destructor Destroy; override;
     function Encrypt(const arPlain: TBytes): TBytes;
     function Decrypt(const arCipher: TBytes): TBytes;
@@ -61,41 +82,34 @@ type
   { TCrypto2Environment }
 {$REGION TCrypto2Environment }
 
-function TCrypto2Environment.GetAES(const aesType: TCrypto2AES;
-  const arPwd, arSalt: TBytes; const iter: integer): ICryptoAES;
+function TCrypto2Environment.GetAES(const arPwd: TBytes;
+  const params: TCrypto2AESParams): ICryptoAES;
 var
   c: TCryptoAESImp;
 begin
-  c := TCryptoAESImp.Create(aesType, arPwd, arSalt, iter);
-  Result := c;
+  // TODO: Add checks.
+  c := TCryptoAESImp.Create(arPwd, params);
+  Result := c; // Cast to interface type.
 end;
 {$ENDREGION}
 { TCryptoAESImp }
 {$REGION TCryptoAESImp }
 
-constructor TCryptoAESImp.Create(const aesType: TCrypto2AES;
-  const arPwd, arSalt: TBytes; const iter: integer);
+constructor TCryptoAESImp.Create(const arPwd: TBytes;
+  const params: TCrypto2AESParams);
 var
   dig: IDigest;
   pgen: TPkcs5S2ParametersGenerator;
-  params: ICipherParameters;
-  keyLength: integer;
+const
+  LENGTH_IV_BYTES = 16;
 begin
+  // sha256 digest is 32 bytes long. Long enough to support the AES256 key-size
+  // (also 32 bytes).
   dig := TDigestUtilities.GetDigest('SHA-256');
   pgen := TPkcs5S2ParametersGenerator.Create(dig);
-  pgen.Init(arPwd, arSalt, iter);
-  case aesType of
-    caAES128:
-      keyLength := 16;
-    caAES192:
-      keyLength := 24;
-    caAES256:
-      keyLength := 32;
-  else
-    raise Exception.Create(SErrorAESLength);
-  end;
+  pgen.Init(arPwd, params.salt, params.iter);
 
-  FParams := pgen.GenerateDerivedParameters('AES', keyLength, 16);
+  FParams := pgen.GenerateDerivedParameters('AES', params.lenKey, params.lenIV);
   FCipher := TCipherUtilities.GetCipher('AES/CBC/PKCS7PADDING');
 end;
 
@@ -144,5 +158,33 @@ begin
   Result := arCipher;
 end;
 {$ENDREGION}
+{ TCrypto2AESParams }
+
+constructor TCrypto2AESParams.Create(const aes: TCrypto2AES;
+  const iter: integer);
+var
+  rnd: TRandom;
+const
+  PKCS5_SALT_LEN = 8;
+  MIN_ITERATIONS = 10000;
+begin
+  FAES := aes;
+  FIter := Max(iter, MIN_ITERATIONS);
+  FIVLength := 16;
+  case FAES of
+    caAES128:
+      FKeyLength := 16;
+    caAES192:
+      FKeyLength := 24;
+    caAES256:
+      FKeyLength := 32;
+  else
+    raise Exception.Create(SErrorAESLength);
+  end;
+  rnd := TRandom.Create;
+  System.SetLength(FSalt, PKCS5_SALT_LEN);
+  rnd.NextBytes(FSalt);
+  rnd.Free;
+end;
 
 end.
