@@ -74,13 +74,13 @@ implementation
 
 uses ClpIBufferedCipher, ClpCipherUtilities, ClpIDigest, ClpDigestUtilities,
   ClpICipherParameters, ClpPkcs5S2ParametersGenerator, System.Math, ClpRandom,
-  ClpHMac;
+  ClpHMac, ClpIMac, ClpIHMac, ClpMacUtilities;
 
 type
 
   TMC2HMACImp = class(TInterfacedObject, ICryptoHMac)
   strict private
-    FGen: THMac;
+    FIMac: IMac;
   public
     constructor Create(const arPwd: TBytes; const params: TCrypto2AESParams);
     destructor Destroy; override;
@@ -262,26 +262,28 @@ var
   dig: IDigest;
   pgen: TPkcs5S2ParametersGenerator;
   cp: ICipherParameters;
+  hm: IHMac;
 begin
   dig := nil;
   pgen := nil;
   try
-    dig := TDigestUtilities.GetDigest('SHA-256');
+    FIMac := TMacUtilities.GetMac('HMAC-SHA256');
+    hm := FIMac as IHMac;
+    dig := hm.GetUnderlyingDigest;
     pgen := TPkcs5S2ParametersGenerator.Create(dig);
     pgen.Init(arPwd, params.salt, params.iter);
-
     cp := pgen.GenerateDerivedMacParameters(params.lenKeyBits);
-    FGen := THMac.Create(dig);
-    FGen.Init(cp);
+    FIMac.Init(cp);
   finally
     if Assigned(pgen) then
       FreeAndNil(pgen);
   end;
+
 end;
 
 destructor TMC2HMACImp.Destroy;
 begin
-  FGen.Free;
+  FIMac := nil;
   inherited;
 end;
 
@@ -290,10 +292,10 @@ var
   res: TBytes;
   olen: integer;
 begin
-  olen := FGen.GetUnderlyingDigest.GetDigestSize;
+  olen := FIMac.GetMacSize;
   SetLength(res, olen);
-  FGen.BlockUpdate(arPlain, 0, Length(arPlain));
-  { olen := } FGen.DoFinal(res, 0);
+  FIMac.BlockUpdate(arPlain, 0, Length(arPlain));
+  FIMac.DoFinal(res, 0);
   Result := res;
 end;
 
