@@ -103,19 +103,24 @@ var
   dig: IDigest;
   pgen: TPkcs5S2ParametersGenerator;
   len: integer;
-const
-  LENGTH_IV_BYTES = 16;
 begin
-  // sha256 digest is 32 bytes long. Long enough to support the AES256 key-size
-  // (also 32 bytes).
-  dig := TDigestUtilities.GetDigest('SHA-256');
-  pgen := TPkcs5S2ParametersGenerator.Create(dig);
-  pgen.Init(arPwd, params.salt, params.iter);
+  dig := nil;
+  pgen := nil;
+  len := 0;
+  try
+    // sha256 digest is 32 bytes long. Long enough to support the AES256 key-size
+    // (also 32 bytes).
+    dig := TDigestUtilities.GetDigest('SHA-256');
+    pgen := TPkcs5S2ParametersGenerator.Create(dig);
+    pgen.Init(arPwd, params.salt, params.iter);
 
-  FParams := pgen.GenerateDerivedParameters('AES', params.lenKeyBits,
-    params.lenIVBits);
-  FCipher := TCipherUtilities.GetCipher('AES/CBC/PKCS7PADDING');
-  len := FCipher.GetBlockSize;
+    FParams := pgen.GenerateDerivedParameters('AES', params.lenKeyBits,
+      params.lenIVBits);
+    FCipher := TCipherUtilities.GetCipher('AES/CBC/PKCS7PADDING');
+  finally
+    if Assigned(pgen) then
+      FreeAndNil(pgen);
+  end;
 end;
 
 function TCryptoAESImp.Decrypt(const arCipher: TBytes): TBytes;
