@@ -23,7 +23,7 @@ uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
   System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, System.Actions,
-  Vcl.ActnList, crypto_facade;
+  Vcl.ActnList, crypto_facade, crypto2_facade;
 
 type
   TfrmMain = class(TForm)
@@ -51,6 +51,7 @@ type
     memoDecrypt: TMemo;
     actDecrypt: TAction;
     btnDecrypt: TButton;
+    chkUse2: TCheckBox;
     procedure FormCreate(Sender: TObject);
     procedure actGenKeyExecute(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
@@ -58,6 +59,7 @@ type
   private
     mCrypto: TCryptoEnvironment;
     FCipher: TCryptoAESCBC;
+    FParams: TCrypto2AESParams;
   public
     { Public declarations }
   end;
@@ -73,19 +75,37 @@ procedure TfrmMain.actDecryptExecute(Sender: TObject);
 var
   arCipher: TBytes;
   arPlain: TBytes;
+  arPwd: TBytes;
+  env: TCrypto2Environment;
+  cphr: ICryptoAES;
 begin
-  if not Assigned(FCipher) then
-    Exit;
-
   arCipher := mCrypto.BaseDecode(cbBase32, memoCypher.Lines.Text);
-  arPlain := FCipher.Decrypt(arCipher);
+  if chkUse2.Checked then
+  begin
+    if not Assigned(FParams) then
+      Exit;
+    arPwd := BytesOf(edtPassword.Text);
+    env := TCrypto2Environment.Create;
+    cphr := env.GetAES(arPwd, FParams);
+    arPlain := cphr.Decrypt(arCipher);
+    env.Free;
+    cphr := nil;
+  end
+  else
+  begin
+    if not Assigned(FCipher) then
+      Exit;
+    arPlain := FCipher.Decrypt(arCipher);
+  end;
   memoDecrypt.Lines.Text := StringOf(arPlain);
 end;
 
 procedure TfrmMain.actGenKeyExecute(Sender: TObject);
 var
-  ar: TBytes;
+  ar, arPwd: TBytes;
   ctext: TBytes;
+  env: TCrypto2Environment;
+  cphr: ICryptoAES;
 begin
   edtKey.Text := EmptyStr;
   edtSalt.Text := EmptyStr;
@@ -93,15 +113,32 @@ begin
   memoCypher.Lines.Clear;
   memoDecrypt.Lines.Clear;
 
-  if not Assigned(FCipher) then
-    FCipher := mCrypto.GetCipherAESCBC(edtPassword.Text, chkSalt.Checked);
-
-  edtKey.Text := mCrypto.BaseEncode(cbBase32, FCipher.Key);
-  edtSalt.Text := mCrypto.BaseEncode(cbBase32, FCipher.Salt);
-  edtIV.Text := mCrypto.BaseEncode(cbBase32, FCipher.iv);
-
   ar := BytesOf(memoPlain.Lines.Text);
-  ctext := FCipher.Encrypt(ar);
+  arPwd := BytesOf(edtPassword.Text);
+
+  if chkUse2.Checked then
+  begin
+    if not Assigned(FParams) then
+      FParams := TCrypto2AESParams.Create(caAES256);
+    edtSalt.Text := mCrypto.BaseEncode(cbBase32, FParams.salt);
+
+    env := TCrypto2Environment.Create;
+    cphr := env.GetAES(arPwd, FParams);
+    ctext := cphr.Encrypt(ar);
+    env.Free;
+    cphr := nil;
+  end
+  else
+  begin
+    if not Assigned(FCipher) then
+      FCipher := mCrypto.GetCipherAESCBC(edtPassword.Text, chkSalt.Checked);
+
+    edtKey.Text := mCrypto.BaseEncode(cbBase32, FCipher.Key);
+    edtSalt.Text := mCrypto.BaseEncode(cbBase32, FCipher.salt);
+    edtIV.Text := mCrypto.BaseEncode(cbBase32, FCipher.iv);
+
+    ctext := FCipher.Encrypt(ar);
+  end;
   memoCypher.Lines.Add(mCrypto.BaseEncode(cbBase32, ctext));
 end;
 
@@ -111,6 +148,8 @@ begin
     FreeAndNil(FCipher);
   if Assigned(mCrypto) then
     FreeAndNil(mCrypto);
+  if Assigned(FParams) then
+    FreeAndNil(FParams);
 end;
 
 procedure TfrmMain.FormCreate(Sender: TObject);

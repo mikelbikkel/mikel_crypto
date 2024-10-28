@@ -180,6 +180,14 @@ object frmMain: TfrmMain
     Action = actDecrypt
     TabOrder = 10
   end
+  object chkUse2: TCheckBox
+    Left = 385
+    Top = 81
+    Width = 97
+    Height = 17
+    Caption = 'UseCrypto 2'
+    TabOrder = 11
+  end
   object alMain: TActionList
     Left = 544
     Top = 24

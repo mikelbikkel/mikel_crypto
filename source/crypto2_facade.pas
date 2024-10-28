@@ -45,13 +45,15 @@ type
     FKeyLength: integer;
     FIVLength: integer;
 
+    function getLenKeyBits: integer;
+    function getLenIVBits: integer;
   public
-    constructor Create(const aes: TCrypto2AES; const iter: integer);
+    constructor Create(const aes: TCrypto2AES; const iter: integer = 10000);
     property aes: TCrypto2AES read FAES;
     property salt: TBytes read FSalt;
     property iter: integer read FIter;
-    property lenKey: integer read FKeyLength;
-    property lenIV: integer read FIVLength;
+    property lenKeyBits: integer read getLenKeyBits;
+    property lenIVBits: integer read getLenIVBits;
   end;
 
   TCrypto2Environment = class
@@ -100,6 +102,7 @@ constructor TCryptoAESImp.Create(const arPwd: TBytes;
 var
   dig: IDigest;
   pgen: TPkcs5S2ParametersGenerator;
+  len: integer;
 const
   LENGTH_IV_BYTES = 16;
 begin
@@ -109,8 +112,10 @@ begin
   pgen := TPkcs5S2ParametersGenerator.Create(dig);
   pgen.Init(arPwd, params.salt, params.iter);
 
-  FParams := pgen.GenerateDerivedParameters('AES', params.lenKey, params.lenIV);
+  FParams := pgen.GenerateDerivedParameters('AES', params.lenKeyBits,
+    params.lenIVBits);
   FCipher := TCipherUtilities.GetCipher('AES/CBC/PKCS7PADDING');
+  len := FCipher.GetBlockSize;
 end;
 
 function TCryptoAESImp.Decrypt(const arCipher: TBytes): TBytes;
@@ -185,6 +190,16 @@ begin
   System.SetLength(FSalt, PKCS5_SALT_LEN);
   rnd.NextBytes(FSalt);
   rnd.Free;
+end;
+
+function TCrypto2AESParams.getLenIVBits: integer;
+begin
+  Result := FIVLength * 8;
+end;
+
+function TCrypto2AESParams.getLenKeyBits: integer;
+begin
+  Result := FKeyLength * 8;
 end;
 
 end.
