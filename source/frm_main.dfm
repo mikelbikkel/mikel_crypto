@@ -43,35 +43,35 @@ object frmMain: TfrmMain
   end
   object lblPassword: TLabel
     Left = 209
-    Top = 203
+    Top = 211
     Width = 56
     Height = 15
     Caption = 'Password: '
   end
   object Label3: TLabel
     Left = 41
-    Top = 203
+    Top = 211
     Width = 99
     Height = 15
     Caption = 'Crypto Algorithm: '
   end
   object Label4: TLabel
     Left = 48
-    Top = 299
+    Top = 307
     Width = 81
     Height = 15
     Caption = 'Generated key: '
   end
   object Label5: TLabel
     Left = 48
-    Top = 328
+    Top = 336
     Width = 73
     Height = 15
     Caption = 'Generated IV: '
   end
   object Label6: TLabel
     Left = 48
-    Top = 270
+    Top = 278
     Width = 78
     Height = 15
     Caption = 'Generated salt:'
@@ -93,7 +93,7 @@ object frmMain: TfrmMain
   end
   object edtKey: TEdit
     Left = 144
-    Top = 296
+    Top = 304
     Width = 448
     Height = 23
     ReadOnly = True
@@ -101,7 +101,7 @@ object frmMain: TfrmMain
   end
   object edtPassword: TEdit
     Left = 209
-    Top = 224
+    Top = 232
     Width = 145
     Height = 23
     TabOrder = 2
@@ -109,7 +109,7 @@ object frmMain: TfrmMain
   end
   object chkSalt: TCheckBox
     Left = 385
-    Top = 227
+    Top = 235
     Width = 97
     Height = 17
     Caption = 'Use salt'
@@ -119,7 +119,7 @@ object frmMain: TfrmMain
   end
   object cmbCryptoAlgo: TComboBox
     Left = 41
-    Top = 224
+    Top = 232
     Width = 145
     Height = 23
     Style = csDropDownList
@@ -133,7 +133,7 @@ object frmMain: TfrmMain
   end
   object edtIV: TEdit
     Left = 144
-    Top = 325
+    Top = 333
     Width = 448
     Height = 23
     ReadOnly = True
@@ -141,7 +141,7 @@ object frmMain: TfrmMain
   end
   object edtSalt: TEdit
     Left = 144
-    Top = 267
+    Top = 275
     Width = 240
     Height = 23
     TabOrder = 6
@@ -160,21 +160,21 @@ object frmMain: TfrmMain
     Left = 40
     Top = 395
     Width = 553
-    Height = 105
+    Height = 70
     TabOrder = 8
   end
   object memoDecrypt: TMemo
-    Left = 41
-    Top = 552
+    Left = 40
+    Top = 512
     Width = 552
-    Height = 89
+    Height = 73
     Lines.Strings = (
       'memoDecrypt')
     TabOrder = 9
   end
   object btnDecrypt: TButton
-    Left = 440
-    Top = 506
+    Left = 456
+    Top = 17
     Width = 75
     Height = 31
     Action = actDecrypt
@@ -187,6 +187,22 @@ object frmMain: TfrmMain
     Height = 17
     Caption = 'UseCrypto 2'
     TabOrder = 11
+  end
+  object edtMacSend: TEdit
+    Left = 136
+    Top = 183
+    Width = 456
+    Height = 23
+    TabOrder = 12
+    Text = 'edtMacSend'
+  end
+  object edtMacReceive: TEdit
+    Left = 136
+    Top = 608
+    Width = 456
+    Height = 23
+    TabOrder = 13
+    Text = 'edtMacReceive'
   end
   object alMain: TActionList
     Left = 544

@@ -130,16 +130,13 @@ type
     function BaseDecode(const enc: TCryptoEncoding; const data: string): TBytes;
   end;
 
-
-
 implementation
 
 uses ClpCipherUtilities, ClpIDigest, ClpDigestUtilities, ClpICipherParameters,
   ClpParameterUtilities, SbpBase32, ClpIKeyParameter, ClpIParametersWithIV,
   ClpParametersWithIV, SbpBase64, ClpPkcs5S2ParametersGenerator;
 
-
-  { TCryptoEnvironment }
+{ TCryptoEnvironment }
 {$REGION TCryptoEnvironment }
 
 function TCryptoEnvironment.BaseDecode(const enc: TCryptoEncoding;
@@ -151,7 +148,7 @@ begin
     cbBase32:
       Result := TBase32.Rfc4648.Decode(data);
   else
-    raise Exception.Create(SUnknownTCryptoEncoding);
+    raise Exception.CreateRes(@SUnknownTCryptoEncoding);
   end;
 end;
 
@@ -164,7 +161,7 @@ begin
     cbBase32:
       Result := TBase32.Rfc4648.Encode(data, True);
   else
-    raise Exception.Create(SUnknownTCryptoEncoding);
+    raise Exception.CreateRes(@SUnknownTCryptoEncoding);
   end;
 end;
 
@@ -236,7 +233,7 @@ begin
     caAES256:
       keyLength := 32;
   else
-    raise Exception.Create(SUnknownAESLength);
+    raise Exception.CreateRes(@SUnknownAESLength);
   end;
 
   params := pgen.GenerateDerivedParameters('AES', keyLength, 16);
@@ -265,8 +262,6 @@ begin
   System.SetLength(Result, PKCS5_SALT_LEN);
   FGen.NextBytes(Result);
 end;
-
-
 
 function TCryptoEnvironment.GetCipherAESCBC(const password: string;
   const useSalt: boolean; const aesType: TCryptoAES): TCryptoAESCBC;
@@ -314,7 +309,7 @@ begin
     caAES256:
       keyLength := 32;
   else
-    raise Exception.Create(SUnknownAESLength);
+    raise Exception.CreateRes(@SUnknownAESLength);
   end;
   SetLength(FKey, keyLength);
 
@@ -414,6 +409,5 @@ begin
     Result := SUnknownHashName;
   end;
 end;
-
 
 end.

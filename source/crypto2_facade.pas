@@ -33,6 +33,11 @@ type
     function Decrypt(const arCipher: TBytes): TBytes;
   end;
 
+  // Hash-based message authetication code.
+  ICryptoHMac = interface
+    function GenerateMAC(const arPlain: TBytes): TBytes;
+  end;
+
   // Separate class for aestype, salt, iter. These must be re-used.
   // Do not store password info.
   // This class generates the salt.
@@ -61,6 +66,8 @@ type
     // Factory to create an AES/CBC/PKCS7PADDING cipher
     function GetAES(const arPwd: TBytes; const params: TCrypto2AESParams)
       : ICryptoAES;
+    function GetHMac(const arPwd: TBytes; const params: TCrypto2AESParams)
+      : ICryptoHMac;
   end;
 
 implementation
@@ -71,7 +78,7 @@ uses ClpIBufferedCipher, ClpCipherUtilities, ClpIDigest, ClpDigestUtilities,
 
 type
 
-  TMC2HMACImp = class
+  TMC2HMACImp = class(TInterfacedObject, ICryptoHMac)
   strict private
     FGen: THMac;
   public
@@ -105,6 +112,16 @@ begin
   c := TCryptoAESImp.Create(arPwd, params);
   Result := c; // Cast to interface type.
 end;
+
+function TCrypto2Environment.GetHMac(const arPwd: TBytes;
+  const params: TCrypto2AESParams): ICryptoHMac;
+var
+  hm: TMC2HMACImp;
+begin
+  hm := TMC2HMACImp.Create(arPwd, params);
+  Result := hm; // Cast to interface type.
+end;
+
 {$ENDREGION}
 { TCryptoAESImp }
 {$REGION TCryptoAESImp }
@@ -138,18 +155,38 @@ var
   BufCounter, Count, BufLen: Int32;
   arPlain: TBytes;
 begin
-  FCipher.Init(false, FParams);
-  BufLen := Length(arCipher);
-  SetLength(arPlain, BufLen);
-  BufCounter := 0;
+  try
+    FCipher.Init(false, FParams);
+    BufLen := Length(arCipher);
+    SetLength(arPlain, BufLen);
+    BufCounter := 0;
 
-  Count := FCipher.ProcessBytes(arCipher, 0, BufLen, arPlain, BufCounter);
-  Inc(BufCounter, Count); // BufCounter := BufCounter + Count;
-  Count := FCipher.DoFinal(arPlain, BufCounter);
-  Inc(BufCounter, Count);
+    Count := FCipher.ProcessBytes(arCipher, 0, BufLen, arPlain, BufCounter);
+    Inc(BufCounter, Count); // BufCounter := BufCounter + Count;
+    Count := FCipher.DoFinal(arPlain, BufCounter);
+    Inc(BufCounter, Count);
 
-  SetLength(arPlain, BufCounter);
-  Result := arPlain;
+    SetLength(arPlain, BufCounter);
+    Result := arPlain;
+  except
+    // uses SbpSimpleBaseLibTypes
+    // ESimpleBaseLibException = class(Exception);
+    //
+    // uses HlpHashLibTypes
+    // EHashLibException = class(Exception);
+    //
+    // uses ClpCryptoLibTypes
+    // ECryptoLibException = class(Exception);
+    // EInvalidCastCryptoLibException = class(EInvalidCast);
+    // other cryptolib exceptions are derived from ECryptoLibException
+
+    on e: Exception do
+    begin
+      var
+      s := e.Message;
+    end;
+
+  end;
 end;
 
 destructor TCryptoAESImp.Destroy;
@@ -199,7 +236,7 @@ begin
     caAES256:
       FKeyLength := 32;
   else
-    raise Exception.Create(SErrorAESLength);
+    raise Exception.CreateRes(@SErrorAESLength);
   end;
   rnd := TRandom.Create;
   System.SetLength(FSalt, PKCS5_SALT_LEN);
@@ -244,7 +281,7 @@ end;
 
 destructor TMC2HMACImp.Destroy;
 begin
-  FGen := nil;
+  FGen.Free;
   inherited;
 end;
 

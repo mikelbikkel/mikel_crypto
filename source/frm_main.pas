@@ -52,6 +52,8 @@ type
     actDecrypt: TAction;
     btnDecrypt: TButton;
     chkUse2: TCheckBox;
+    edtMacSend: TEdit;
+    edtMacReceive: TEdit;
     procedure FormCreate(Sender: TObject);
     procedure actGenKeyExecute(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
@@ -74,10 +76,11 @@ implementation
 procedure TfrmMain.actDecryptExecute(Sender: TObject);
 var
   arCipher: TBytes;
-  arPlain: TBytes;
+  arPlain, arMac: TBytes;
   arPwd: TBytes;
   env: TCrypto2Environment;
   cphr: ICryptoAES;
+  mc: ICryptoHMac;
 begin
   arCipher := mCrypto.BaseDecode(cbBase32, memoCypher.Lines.Text);
   if chkUse2.Checked then
@@ -88,6 +91,11 @@ begin
     env := TCrypto2Environment.Create;
     cphr := env.GetAES(arPwd, FParams);
     arPlain := cphr.Decrypt(arCipher);
+
+    mc := env.GetHMac(arPwd, FParams);
+    arMac := mc.GenerateMAC(arPlain);
+    edtMacReceive.Text := mCrypto.BaseEncode(cbBase32, arMac);
+
     env.Free;
     cphr := nil;
   end
@@ -102,14 +110,17 @@ end;
 
 procedure TfrmMain.actGenKeyExecute(Sender: TObject);
 var
-  ar, arPwd: TBytes;
+  ar, arPwd, arMac: TBytes;
   ctext: TBytes;
   env: TCrypto2Environment;
   cphr: ICryptoAES;
+  mc: ICryptoHMac;
 begin
   edtKey.Text := EmptyStr;
   edtSalt.Text := EmptyStr;
   edtIV.Text := EmptyStr;
+  edtMacSend.Text := EmptyStr;
+  edtMacReceive.Text := EmptyStr;
   memoCypher.Lines.Clear;
   memoDecrypt.Lines.Clear;
 
@@ -125,6 +136,9 @@ begin
     env := TCrypto2Environment.Create;
     cphr := env.GetAES(arPwd, FParams);
     ctext := cphr.Encrypt(ar);
+    mc := env.GetHMac(arPwd, FParams);
+    arMac := mc.GenerateMAC(ar);
+    edtMacSend.Text := mCrypto.BaseEncode(cbBase32, arMac);
     env.Free;
     cphr := nil;
   end
