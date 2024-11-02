@@ -102,13 +102,13 @@ object frmMain: TfrmMain
   object edtPassword: TEdit
     Left = 209
     Top = 232
-    Width = 145
+    Width = 175
     Height = 23
     TabOrder = 2
-    Text = 'Geheim'
+    Text = 'Geheim74586mfgbk%$$#@F'
   end
   object chkSalt: TCheckBox
-    Left = 385
+    Left = 473
     Top = 235
     Width = 97
     Height = 17

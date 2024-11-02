@@ -80,22 +80,22 @@ var
   arPwd: TBytes;
   env: TCrypto2Environment;
   cphr: ICryptoAES;
-  mc: ICryptoHMac;
+  mc: IC2HMac;
 begin
-  arCipher := mCrypto.BaseDecode(cbBase32, memoCypher.Lines.Text);
+  arCipher := TC2Base64.Decode(memoCypher.Text);
   if chkUse2.Checked then
   begin
     if not Assigned(FParams) then
       Exit;
-    arPwd := BytesOf(edtPassword.Text);
+    arPwd := TC2UTF8.Decode(edtPassword.Text);
     env := TCrypto2Environment.Create;
     cphr := env.GetAES(arPwd, FParams);
     arPlain := cphr.Decrypt(arCipher);
 
-    mc := env.GetHMac(arPwd, FParams);
+    mc := TC2HMac.getPBMAC1('HMAC-SHA3-224', arPwd, FParams.salt, FParams.iter);
     arMac := mc.GenerateMAC(arPlain);
-    edtMacReceive.Text := mCrypto.BaseEncode(cbBase32, arMac);
-
+    edtMacReceive.Text := TC2Base64.Encode(arMac);
+    mc := nil;
     env.Free;
     cphr := nil;
   end
@@ -105,7 +105,7 @@ begin
       Exit;
     arPlain := FCipher.Decrypt(arCipher);
   end;
-  memoDecrypt.Lines.Text := StringOf(arPlain);
+  memoDecrypt.Text := TC2UTF8.Encode(arPlain);
 end;
 
 procedure TfrmMain.actGenKeyExecute(Sender: TObject);
@@ -114,7 +114,7 @@ var
   ctext: TBytes;
   env: TCrypto2Environment;
   cphr: ICryptoAES;
-  mc: ICryptoHMac;
+  mc: IC2HMac;
 begin
   edtKey.Text := EmptyStr;
   edtSalt.Text := EmptyStr;
@@ -124,21 +124,22 @@ begin
   memoCypher.Lines.Clear;
   memoDecrypt.Lines.Clear;
 
-  ar := BytesOf(memoPlain.Lines.Text);
-  arPwd := BytesOf(edtPassword.Text);
+  ar := TC2UTF8.Decode(memoPlain.Text);
+  arPwd := TC2UTF8.Decode(edtPassword.Text);
 
   if chkUse2.Checked then
   begin
     if not Assigned(FParams) then
-      FParams := TCrypto2AESParams.Create(caAES256);
-    edtSalt.Text := mCrypto.BaseEncode(cbBase32, FParams.salt);
+      FParams := TCrypto2AESParams.Create(caAES256, 16);
+    edtSalt.Text := TC2Base64.Encode(FParams.salt);
 
     env := TCrypto2Environment.Create;
     cphr := env.GetAES(arPwd, FParams);
     ctext := cphr.Encrypt(ar);
-    mc := env.GetHMac(arPwd, FParams);
+    mc := TC2HMac.getPBMAC1('HMAC-SHA3-224', arPwd, FParams.salt, FParams.iter);
     arMac := mc.GenerateMAC(ar);
-    edtMacSend.Text := mCrypto.BaseEncode(cbBase32, arMac);
+    edtMacSend.Text := TC2Base64.Encode(arMac);
+    mc := nil;
     env.Free;
     cphr := nil;
   end
@@ -147,13 +148,13 @@ begin
     if not Assigned(FCipher) then
       FCipher := mCrypto.GetCipherAESCBC(edtPassword.Text, chkSalt.Checked);
 
-    edtKey.Text := mCrypto.BaseEncode(cbBase32, FCipher.Key);
-    edtSalt.Text := mCrypto.BaseEncode(cbBase32, FCipher.salt);
-    edtIV.Text := mCrypto.BaseEncode(cbBase32, FCipher.iv);
+    edtKey.Text := TC2Base64.Encode(FCipher.Key);
+    edtSalt.Text := TC2Base64.Encode(FCipher.salt);
+    edtIV.Text := TC2Base64.Encode(FCipher.iv);
 
     ctext := FCipher.Encrypt(ar);
   end;
-  memoCypher.Lines.Add(mCrypto.BaseEncode(cbBase32, ctext));
+  memoCypher.Text := TC2Base64.Encode(ctext);
 end;
 
 procedure TfrmMain.FormClose(Sender: TObject; var Action: TCloseAction);
