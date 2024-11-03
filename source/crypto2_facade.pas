@@ -23,11 +23,12 @@ uses System.SysUtils, System.Classes;
 
 resourcestring
   SErrorAESLength = 'Unknown AES length';
+  SErrorCipherAlgo = 'Unknown cipher alogrithm';
 
 type
-  TCrypto2AES = (caAES128, caAES192, caAES256);
+  // TC2AES = (caAES128, caAES192, caAES256);
 
-  ICryptoAES = interface
+  IC2Cipher = interface
     function Encrypt(const arPlain: TBytes): TBytes;
     function Decrypt(const arCipher: TBytes): TBytes;
   end;
@@ -40,8 +41,8 @@ type
 
   TC2UTF8 = class
   public
-    class function Encode(const data: TBytes): string;
-    class function Decode(const data: string): TBytes;
+    class function StringOf(const data: TBytes): string;
+    class function BytesOf(const data: string): TBytes;
   end;
 
   // Hash-based message authetication code.
@@ -63,34 +64,26 @@ type
   end;
 
   // After creation, this thing is immutable.
-  TCrypto2AESParams = class
+  TC2AESParams = class
   strict private
-    FAES: TCrypto2AES;
     FSalt: TBytes;
     FIter: integer;
     FKeyLength: integer;
     FIVLength: integer;
-
-    function getLenKeyBits: integer;
-    function getLenIVBits: integer;
   public
-    constructor Create(const aes: TCrypto2AES; const lenSalt: integer = 8;
-      const iter: integer = 10000);
-    property aes: TCrypto2AES read FAES;
+    constructor Create(const keyLengthBits: integer = 256;
+      const lenSalt: integer = 8; const iter: integer = 10000);
     property salt: TBytes read FSalt;
     property iter: integer read FIter;
-    property lenKeyBits: integer read getLenKeyBits;
-    property lenIVBits: integer read getLenIVBits;
+    property lenKeyBits: integer read FKeyLength;
+    property lenIVBits: integer read FIVLength;
   end;
 
-  // Separate class for aestype, salt, iter. These must be re-used.
-  // Do not store password info.
-  // This class generates the salt.
-  TCrypto2Environment = class
+  TC2Cipher = class
   public
-    // Factory to create an AES/CBC/PKCS7PADDING cipher
-    function GetAES(const arPwd: TBytes; const params: TCrypto2AESParams)
-      : ICryptoAES;
+    class function getAlgoNames: TStrings;
+    class function getPBES2(const algo: string; const arPwd: TBytes;
+      const params: TC2AESParams): IC2Cipher;
   end;
 
 implementation
@@ -98,7 +91,7 @@ implementation
 uses ClpIBufferedCipher, ClpCipherUtilities, ClpIDigest, ClpDigestUtilities,
   ClpICipherParameters, ClpPkcs5S2ParametersGenerator, System.Math, ClpRandom,
   ClpHMac, ClpIMac, ClpIHMac, ClpMacUtilities, SbpBase64, ClpIParametersWithIV,
-  ClpKeyParameter;
+  ClpKeyParameter, System.StrUtils, System.Types;
 
 type
 
@@ -123,64 +116,57 @@ type
     function IsMacValid(const arPlain: TBytes; const arMac: TBytes): boolean;
   end;
 
-  TCryptoAESImp = class(TInterfacedObject, ICryptoAES)
+  TC2AESImp = class(TInterfacedObject, IC2Cipher)
   strict private
     FCipher: IBufferedCipher;
     FParams: ICipherParameters;
-    FIV: TBytes;
+    FAlgorithm: string;
+    FMode: string;
+    FPadding: string;
   public
-    constructor Create(const arPwd: TBytes; const params: TCrypto2AESParams);
+    constructor Create(const algo: string; const arPwd: TBytes;
+      const params: TC2AESParams);
     destructor Destroy; override;
     function Encrypt(const arPlain: TBytes): TBytes;
     function Decrypt(const arCipher: TBytes): TBytes;
-    property IV: TBytes read FIV;
   end;
 
-  { TCrypto2Environment }
-{$REGION TCrypto2Environment }
+  { TC2AESImp }
+{$REGION TC2AESImp }
 
-function TCrypto2Environment.GetAES(const arPwd: TBytes;
-  const params: TCrypto2AESParams): ICryptoAES;
+constructor TC2AESImp.Create(const algo: string; const arPwd: TBytes;
+  const params: TC2AESParams);
 var
-  c: TCryptoAESImp;
-begin
-  // TODO: Add checks.
-  c := TCryptoAESImp.Create(arPwd, params);
-  Result := c; // Cast to interface type.
-end;
-
-{$ENDREGION}
-{ TCryptoAESImp }
-{$REGION TCryptoAESImp }
-
-constructor TCryptoAESImp.Create(const arPwd: TBytes;
-  const params: TCrypto2AESParams);
-var
+  items: TStringDynArray;
+  len: integer;
   dig: IDigest;
   pgen: TPkcs5S2ParametersGenerator;
-  piv: IParametersWithIV;
 begin
-  dig := nil;
-  pgen := nil;
-  try
-    dig := TDigestUtilities.GetDigest('SHA-256');
-    pgen := TPkcs5S2ParametersGenerator.Create(dig);
-    pgen.Init(arPwd, params.salt, params.iter);
+  items := SplitString(algo, '/');
+  len := Length(items);
+  if (len <> 3) then
+    raise Exception.CreateRes(@SErrorCipherAlgo);
+  FAlgorithm := items[0];
+  FMode := items[1];
+  FPadding := items[2];
+  if (FAlgorithm <> 'AES') then
+    raise Exception.CreateRes(@SErrorCipherAlgo);
 
-    // Creates a key with length = lenKeyBits + lenIVBits.
-    // This key is split into an IV part and a key part.
-    FParams := pgen.GenerateDerivedParameters('AES', params.lenKeyBits,
+  FCipher := TCipherUtilities.GetCipher(algo);
+
+  // TODO: leave as is? Parameter?
+  dig := TDigestUtilities.GetDigest('SHA-256');
+  pgen := TPkcs5S2ParametersGenerator.Create(dig);
+  pgen.Init(arPwd, params.salt, params.iter);
+  if FMode = 'ECB' then
+    FParams := pgen.GenerateDerivedParameters(FAlgorithm, params.lenKeyBits)
+  else
+    FParams := pgen.GenerateDerivedParameters(FAlgorithm, params.lenKeyBits,
       params.lenIVBits);
-    piv := FParams as IParametersWithIV;
-    FIV := piv.GetIV;
-    FCipher := TCipherUtilities.GetCipher('AES/CBC/PKCS7PADDING');
-  finally
-    if Assigned(pgen) then
-      FreeAndNil(pgen);
-  end;
+  pgen.Free;
 end;
 
-function TCryptoAESImp.Decrypt(const arCipher: TBytes): TBytes;
+function TC2AESImp.Decrypt(const arCipher: TBytes): TBytes;
 var
   BufCounter, Count, BufLen: Int32;
   arPlain: TBytes;
@@ -199,17 +185,6 @@ begin
     SetLength(arPlain, BufCounter);
     Result := arPlain;
   except
-    // uses SbpSimpleBaseLibTypes
-    // ESimpleBaseLibException = class(Exception);
-    //
-    // uses HlpHashLibTypes
-    // EHashLibException = class(Exception);
-    //
-    // uses ClpCryptoLibTypes
-    // ECryptoLibException = class(Exception);
-    // EInvalidCastCryptoLibException = class(EInvalidCast);
-    // other cryptolib exceptions are derived from ECryptoLibException
-
     on e: Exception do
     begin
       var
@@ -219,14 +194,14 @@ begin
   end;
 end;
 
-destructor TCryptoAESImp.Destroy;
+destructor TC2AESImp.Destroy;
 begin
   FCipher := nil;
   FParams := nil;
   inherited;
 end;
 
-function TCryptoAESImp.Encrypt(const arPlain: TBytes): TBytes;
+function TC2AESImp.Encrypt(const arPlain: TBytes): TBytes;
 var
   BufCounter, Count, BufLen: Int32;
   arCipher: TBytes;
@@ -247,7 +222,7 @@ end;
 {$ENDREGION}
 { TCrypto2AESParams }
 
-constructor TCrypto2AESParams.Create(const aes: TCrypto2AES;
+constructor TC2AESParams.Create(const keyLengthBits: integer;
   const lenSalt: integer; const iter: integer);
 var
   rnd: TRandom;
@@ -256,34 +231,20 @@ const
   MIN_PKCS5_SALT_LEN = 8;
   MIN_ITERATIONS = 10000;
 begin
-  FAES := aes;
+  // FAES := aes;
   FIter := Max(iter, MIN_ITERATIONS);
-  FIVLength := 16;
-  case FAES of
-    caAES128:
-      FKeyLength := 16;
-    caAES192:
-      FKeyLength := 24;
-    caAES256:
-      FKeyLength := 32;
+  FIVLength := 128; // 16 * 8;
+  if (keyLengthBits = 128) or (keyLengthBits = 192) or (keyLengthBits = 256)
+  then
+    FKeyLength := keyLengthBits
   else
     raise Exception.CreateRes(@SErrorAESLength);
-  end;
+
   rnd := TRandom.Create;
   lenS := Max(lenSalt, MIN_PKCS5_SALT_LEN);
   System.SetLength(FSalt, lenS);
   rnd.NextBytes(FSalt);
   rnd.Free;
-end;
-
-function TCrypto2AESParams.getLenIVBits: integer;
-begin
-  Result := FIVLength * 8;
-end;
-
-function TCrypto2AESParams.getLenKeyBits: integer;
-begin
-  Result := FKeyLength * 8;
 end;
 
 { TPBMAC1Imp }
@@ -357,12 +318,12 @@ end;
 
 { TC2UTF8 }
 
-class function TC2UTF8.Decode(const data: string): TBytes;
+class function TC2UTF8.BytesOf(const data: string): TBytes;
 begin
   Result := TEncoding.UTF8.GetBytes(data);
 end;
 
-class function TC2UTF8.Encode(const data: TBytes): string;
+class function TC2UTF8.StringOf(const data: TBytes): string;
 begin
   Result := TEncoding.UTF8.GetString(data);
 end;
@@ -441,6 +402,24 @@ begin
   m1 := TC2Base64.Encode(msgMac);
   m2 := TC2Base64.Encode(arMac);
   Result := m1.Equals(m2);
+end;
+
+{ TC2Cipher }
+
+class function TC2Cipher.getAlgoNames: TStrings;
+begin
+  Result := TStringList.Create;
+  Result.Add('AES/ECB/PKCS7PADDING');
+  Result.Add('AES/CBC/PKCS7PADDING');
+  Result.Add('AES/CFB/NOPADDING');
+  Result.Add('AES/OFB/NOPADDING');
+  // Result.Add('BLOWFISH/CBC');
+end;
+
+class function TC2Cipher.getPBES2(const algo: string; const arPwd: TBytes;
+  const params: TC2AESParams): IC2Cipher;
+begin
+  Result := TC2AESImp.Create(algo, arPwd, params);
 end;
 
 end.

@@ -61,7 +61,7 @@ type
   private
     mCrypto: TCryptoEnvironment;
     FCipher: TCryptoAESCBC;
-    FParams: TCrypto2AESParams;
+    FParams: TC2AESParams;
   public
     { Public declarations }
   end;
@@ -78,25 +78,25 @@ var
   arCipher: TBytes;
   arPlain, arMac: TBytes;
   arPwd: TBytes;
-  env: TCrypto2Environment;
-  cphr: ICryptoAES;
+  cphr: IC2Cipher;
   mc: IC2HMac;
+  tst: boolean;
 begin
   arCipher := TC2Base64.Decode(memoCypher.Text);
   if chkUse2.Checked then
   begin
     if not Assigned(FParams) then
       Exit;
-    arPwd := TC2UTF8.Decode(edtPassword.Text);
-    env := TCrypto2Environment.Create;
-    cphr := env.GetAES(arPwd, FParams);
+    arPwd := TC2UTF8.BytesOf(edtPassword.Text);
+    cphr := TC2Cipher.getPBES2('AES/CBC/PKCS7PADDING', arPwd, FParams);
+
     arPlain := cphr.Decrypt(arCipher);
 
     mc := TC2HMac.getPBMAC1('HMAC-SHA3-224', arPwd, FParams.salt, FParams.iter);
     arMac := mc.GenerateMAC(arPlain);
     edtMacReceive.Text := TC2Base64.Encode(arMac);
+    tst := mc.IsMacValid(arPlain, TC2Base64.Decode(edtMacSend.Text));
     mc := nil;
-    env.Free;
     cphr := nil;
   end
   else
@@ -105,15 +105,14 @@ begin
       Exit;
     arPlain := FCipher.Decrypt(arCipher);
   end;
-  memoDecrypt.Text := TC2UTF8.Encode(arPlain);
+  memoDecrypt.Text := TC2UTF8.StringOf(arPlain);
 end;
 
 procedure TfrmMain.actGenKeyExecute(Sender: TObject);
 var
   ar, arPwd, arMac: TBytes;
   ctext: TBytes;
-  env: TCrypto2Environment;
-  cphr: ICryptoAES;
+  cphr: IC2Cipher;
   mc: IC2HMac;
 begin
   edtKey.Text := EmptyStr;
@@ -124,23 +123,21 @@ begin
   memoCypher.Lines.Clear;
   memoDecrypt.Lines.Clear;
 
-  ar := TC2UTF8.Decode(memoPlain.Text);
-  arPwd := TC2UTF8.Decode(edtPassword.Text);
+  ar := TC2UTF8.BytesOf(memoPlain.Text);
+  arPwd := TC2UTF8.BytesOf(edtPassword.Text);
 
   if chkUse2.Checked then
   begin
     if not Assigned(FParams) then
-      FParams := TCrypto2AESParams.Create(caAES256, 16);
+      FParams := TC2AESParams.Create; // (256, 16);
     edtSalt.Text := TC2Base64.Encode(FParams.salt);
 
-    env := TCrypto2Environment.Create;
-    cphr := env.GetAES(arPwd, FParams);
+    cphr := TC2Cipher.getPBES2('AES/CBC/PKCS7PADDING', arPwd, FParams);
     ctext := cphr.Encrypt(ar);
     mc := TC2HMac.getPBMAC1('HMAC-SHA3-224', arPwd, FParams.salt, FParams.iter);
     arMac := mc.GenerateMAC(ar);
     edtMacSend.Text := TC2Base64.Encode(arMac);
     mc := nil;
-    env.Free;
     cphr := nil;
   end
   else

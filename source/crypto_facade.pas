@@ -37,11 +37,18 @@ type
     function toString: string;
   end;
 
-  { block cipher key size  block size  IV size
-    AES-128     16 bytes   16 bytes    16 bytes
-    AES-192     24 bytes   16 bytes    16 bytes
-    AES-256     32 bytes   16 bytes    16 bytes
+  { block cipher key size  block size  IV size    CTR size
+    AES-128     16 bytes   16 bytes    16 bytes   16 bytes
+    AES-192     24 bytes   16 bytes    16 bytes   16 bytes
+    AES-256     32 bytes   16 bytes    16 bytes   16 bytes
     Triple DES  24 bytes   8 bytes     8 bytes
+
+    AES mode  Type      IV   Padding  CTR  Remark
+    ECB       Block     No   PKCS7    No   Electronic Code Book - weak. Not recommended.
+    CBC       Block     Yes  PKCS7    No   Cipher Block Chaining.
+    CFB       Stream    Yes  No       No   Cipher FeedBack mode
+    OFB       Stream    Yes  No       No   Output FeedBack mode
+    CTR       Stream    No   No       Yes  Counter mode.
 
     Hash algo. hash size
     MD5        16 bytes 128 bit
@@ -57,15 +64,6 @@ type
     Block ciphers encrypt a group of plaintext symbols as one block.
     Most modern symmetric encryption algorithms are block ciphers.
     https://www.highgo.ca/2019/08/08/the-difference-in-five-modes-in-the-aes-encryption-algorithm/
-    AES modes.
-    For block: CBC or ECB. Padding: PKCS5 or PKCS7
-    Electronic Code Book - weak. Not recommended.
-    Cipher Block Chaining
-    using an initialization vector – IV. The IV has the same size as the block that is encrypted. In general, the IV usually is a random number, not a nonce.
-    output of block X is XORed with input of block X+1.
-    For first block, XOR with IV.
-    For stream: CFB (needs IV), OFB (needs IV), CTR (needs an initial counter value as an IV)
-    Stream modes do not need padding.
 
     PKCS#5 padding is defined for 8-byte block sizes, PKCS#7 padding would work for any block size from 1 to 255 bytes.
   }
