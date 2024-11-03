@@ -23,7 +23,7 @@ uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
   System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, System.Actions,
-  Vcl.ActnList, crypto_facade, crypto2_facade;
+  Vcl.ActnList, crypto_facade, crypto2_facade, Vcl.ExtCtrls;
 
 type
   TfrmMain = class(TForm)
@@ -33,35 +33,41 @@ type
     ca_a: TLabel;
     Button1: TButton;
     alMain: TActionList;
-    actGenKey: TAction;
+    actEncrypt: TAction;
     edtKey: TEdit;
     edtPassword: TEdit;
-    chkSalt: TCheckBox;
     lblPassword: TLabel;
     cmbCryptoAlgo: TComboBox;
     Label3: TLabel;
     Label4: TLabel;
-    Label5: TLabel;
-    edtIV: TEdit;
-    edtSalt: TEdit;
-    Label6: TLabel;
     memoPlain: TMemo;
     memoCypher: TMemo;
     Label7: TLabel;
     memoDecrypt: TMemo;
     actDecrypt: TAction;
     btnDecrypt: TButton;
-    chkUse2: TCheckBox;
     edtMacSend: TEdit;
     edtMacReceive: TEdit;
+    cmbKeyLength: TComboBox;
+    Label8: TLabel;
+    edtSaltLength: TEdit;
+    Label9: TLabel;
+    edtIterations: TEdit;
+    Label10: TLabel;
+    Label11: TLabel;
+    cmbHMAC: TComboBox;
+    Label5: TLabel;
+    Label6: TLabel;
+    RadioGroup1: TRadioGroup;
     procedure FormCreate(Sender: TObject);
-    procedure actGenKeyExecute(Sender: TObject);
+    procedure actEncryptExecute(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
     procedure actDecryptExecute(Sender: TObject);
+    procedure FormShow(Sender: TObject);
   private
-    mCrypto: TCryptoEnvironment;
-    FCipher: TCryptoAESCBC;
     FParams: TC2AESParams;
+    FConfig: TC2AESConfig;
+    procedure InitParams;
   public
     { Public declarations }
   end;
@@ -82,33 +88,25 @@ var
   mc: IC2HMac;
   tst: boolean;
 begin
+  if not Assigned(FParams) then
+    Exit;
+
   arCipher := TC2Base64.Decode(memoCypher.Text);
-  if chkUse2.Checked then
-  begin
-    if not Assigned(FParams) then
-      Exit;
-    arPwd := TC2UTF8.BytesOf(edtPassword.Text);
-    cphr := TC2Cipher.getPBES2('AES/CBC/PKCS7PADDING', arPwd, FParams);
+  arPwd := TC2UTF8.BytesOf(edtPassword.Text);
 
-    arPlain := cphr.Decrypt(arCipher);
+  cphr := TC2Cipher.getPBES2(FConfig.FCipherAlgo, arPwd, FParams);
+  arPlain := cphr.Decrypt(arCipher);
+  mc := TC2HMac.getPBMAC1(FConfig.FHMacAlgo, arPwd, FParams.salt, FParams.iter);
+  arMac := mc.GenerateMAC(arPlain);
+  tst := mc.IsMacValid(arPlain, TC2Base64.Decode(edtMacSend.Text));
+  mc := nil;
+  cphr := nil;
 
-    mc := TC2HMac.getPBMAC1('HMAC-SHA3-224', arPwd, FParams.salt, FParams.iter);
-    arMac := mc.GenerateMAC(arPlain);
-    edtMacReceive.Text := TC2Base64.Encode(arMac);
-    tst := mc.IsMacValid(arPlain, TC2Base64.Decode(edtMacSend.Text));
-    mc := nil;
-    cphr := nil;
-  end
-  else
-  begin
-    if not Assigned(FCipher) then
-      Exit;
-    arPlain := FCipher.Decrypt(arCipher);
-  end;
+  edtMacReceive.Text := TC2Base64.Encode(arMac);
   memoDecrypt.Text := TC2UTF8.StringOf(arPlain);
 end;
 
-procedure TfrmMain.actGenKeyExecute(Sender: TObject);
+procedure TfrmMain.actEncryptExecute(Sender: TObject);
 var
   ar, arPwd, arMac: TBytes;
   ctext: TBytes;
@@ -116,50 +114,28 @@ var
   mc: IC2HMac;
 begin
   edtKey.Text := EmptyStr;
-  edtSalt.Text := EmptyStr;
-  edtIV.Text := EmptyStr;
   edtMacSend.Text := EmptyStr;
   edtMacReceive.Text := EmptyStr;
   memoCypher.Lines.Clear;
   memoDecrypt.Lines.Clear;
 
+  InitParams;
+
   ar := TC2UTF8.BytesOf(memoPlain.Text);
   arPwd := TC2UTF8.BytesOf(edtPassword.Text);
 
-  if chkUse2.Checked then
-  begin
-    if not Assigned(FParams) then
-      FParams := TC2AESParams.Create; // (256, 16);
-    edtSalt.Text := TC2Base64.Encode(FParams.salt);
-
-    cphr := TC2Cipher.getPBES2('AES/CBC/PKCS7PADDING', arPwd, FParams);
-    ctext := cphr.Encrypt(ar);
-    mc := TC2HMac.getPBMAC1('HMAC-SHA3-224', arPwd, FParams.salt, FParams.iter);
-    arMac := mc.GenerateMAC(ar);
-    edtMacSend.Text := TC2Base64.Encode(arMac);
-    mc := nil;
-    cphr := nil;
-  end
-  else
-  begin
-    if not Assigned(FCipher) then
-      FCipher := mCrypto.GetCipherAESCBC(edtPassword.Text, chkSalt.Checked);
-
-    edtKey.Text := TC2Base64.Encode(FCipher.Key);
-    edtSalt.Text := TC2Base64.Encode(FCipher.salt);
-    edtIV.Text := TC2Base64.Encode(FCipher.iv);
-
-    ctext := FCipher.Encrypt(ar);
-  end;
+  cphr := TC2Cipher.getPBES2(FConfig.FCipherAlgo, arPwd, FParams);
+  ctext := cphr.Encrypt(ar);
+  mc := TC2HMac.getPBMAC1(FConfig.FHMacAlgo, arPwd, FParams.salt, FParams.iter);
+  arMac := mc.GenerateMAC(ar);
+  edtMacSend.Text := TC2Base64.Encode(arMac);
+  mc := nil;
+  cphr := nil;
   memoCypher.Text := TC2Base64.Encode(ctext);
 end;
 
 procedure TfrmMain.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
-  if Assigned(FCipher) then
-    FreeAndNil(FCipher);
-  if Assigned(mCrypto) then
-    FreeAndNil(mCrypto);
   if Assigned(FParams) then
     FreeAndNil(FParams);
 end;
@@ -176,10 +152,51 @@ const
 begin
   ReportMemoryLeaksOnShutdown := true;
 
-  mCrypto := TCryptoEnvironment.Create;
-  rnd := mCrypto.GenRandomInt;
   ca_a.Caption := S_A_UPPER + ' - ' + S_A_LOWER + ' - ' + S_EURO + ' - ' +
-    S_GAL_C + ' ] ' + IntToStr(rnd);
+    S_GAL_C + ' ] ';
+end;
+
+procedure TfrmMain.FormShow(Sender: TObject);
+var
+  s: TStrings;
+begin
+  cmbCryptoAlgo.Items.Clear;
+  s := TC2Cipher.getAlgoNames;
+  cmbCryptoAlgo.Items := s;
+  s.Free;
+  cmbCryptoAlgo.ItemIndex := 1;
+
+  cmbKeyLength.Items.Clear;
+  s := TC2Cipher.getKeyLengths;
+  cmbKeyLength.Items := s;
+  s.Free;
+  cmbKeyLength.ItemIndex := 1;
+
+  cmbHMAC.Items.Clear;
+  s := TC2HMac.getAlgoNames;
+  cmbHMAC.Items := s;
+  s.Free;
+  cmbHMAC.ItemIndex := 1;
+end;
+
+procedure TfrmMain.InitParams;
+var
+  s: string;
+  lenSalt, lenKey, iter: integer;
+
+begin
+  if Assigned(FParams) then
+    FreeAndNil(FParams);
+
+  s := edtSaltLength.Text;
+  lenSalt := StrToInt(s);
+  s := cmbKeyLength.Items[cmbKeyLength.ItemIndex];
+  lenKey := StrToInt(s);
+  iter := StrToInt(edtIterations.Text);
+  FParams := TC2AESParams.Create(lenKey, lenSalt, iter);
+
+  FConfig.FCipherAlgo := cmbCryptoAlgo.Items[cmbCryptoAlgo.ItemIndex];
+  FConfig.FHMacAlgo := cmbHMAC.Items[cmbHMAC.ItemIndex];
 end;
 
 end.

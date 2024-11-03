@@ -63,13 +63,27 @@ type
     class function getKeyMAC(const algo: string; const arKey: TBytes): IC2HMac;
   end;
 
+  TC2AESConfig = record // TODO: class
+    FCipherAlgo: string;
+    // FKeyLength: integer;
+    FHMacAlgo: string;
+  end;
+
   // After creation, this thing is immutable.
   TC2AESParams = class
   strict private
+
+    // TODO: add mode: key-based-encryption or PBE
+
+    { Key section }
+    // TODO: Add key-parameter.
+
+    { PBE section }
+    // TODO: add password parameter [store encrypted]
     FSalt: TBytes;
     FIter: integer;
-    FKeyLength: integer;
-    FIVLength: integer;
+    FKeyLength: integer; // TODO: TC2AESConfig parameter
+    FIVLength: integer; // TODO: TC2AESConfig parameter
   public
     constructor Create(const keyLengthBits: integer = 256;
       const lenSalt: integer = 8; const iter: integer = 10000);
@@ -82,6 +96,7 @@ type
   TC2Cipher = class
   public
     class function getAlgoNames: TStrings;
+    class function getKeyLengths: TStrings;
     class function getPBES2(const algo: string; const arPwd: TBytes;
       const params: TC2AESParams): IC2Cipher;
   end;
@@ -414,6 +429,14 @@ begin
   Result.Add('AES/CFB/NOPADDING');
   Result.Add('AES/OFB/NOPADDING');
   // Result.Add('BLOWFISH/CBC');
+end;
+
+class function TC2Cipher.getKeyLengths: TStrings;
+begin
+  Result := TStringList.Create;
+  Result.Add('128');
+  Result.Add('192');
+  Result.Add('256');
 end;
 
 class function TC2Cipher.getPBES2(const algo: string; const arPwd: TBytes;
