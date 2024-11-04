@@ -73,16 +73,16 @@ object frmMain: TfrmMain
   object Label8: TLabel
     Left = 127
     Top = 243
-    Width = 59
+    Width = 102
     Height = 15
-    Caption = 'Key length:'
+    Caption = 'Key length [in bits]:'
   end
   object Label9: TLabel
-    Left = 395
+    Left = 361
     Top = 230
-    Width = 59
+    Width = 89
     Height = 15
-    Caption = 'Salt length:'
+    Caption = 'Salt length [bits]:'
   end
   object Label10: TLabel
     Left = 398
@@ -216,7 +216,7 @@ object frmMain: TfrmMain
     MaxLength = 2
     NumbersOnly = True
     TabOrder = 11
-    Text = '8'
+    Text = '64'
   end
   object edtIterations: TEdit
     Left = 470
@@ -234,7 +234,7 @@ object frmMain: TfrmMain
     TabOrder = 13
     Text = 'hmac'
   end
-  object RadioGroup1: TRadioGroup
+  object rgKeySource: TRadioGroup
     Left = 640
     Top = 201
     Width = 145
@@ -246,6 +246,14 @@ object frmMain: TfrmMain
       'Random key')
     TabOrder = 14
   end
+  object btnGenerateKey: TButton
+    Left = 664
+    Top = 30
+    Width = 97
+    Height = 32
+    Action = actGenerateKey
+    TabOrder = 15
+  end
   object alMain: TActionList
     Left = 600
     Top = 24
@@ -256,6 +264,10 @@ object frmMain: TfrmMain
     object actDecrypt: TAction
       Caption = 'Decrypt'
       OnExecute = actDecryptExecute
+    end
+    object actGenerateKey: TAction
+      Caption = 'Generate Key'
+      OnExecute = actGenerateKeyExecute
     end
   end
 end

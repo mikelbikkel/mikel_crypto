@@ -58,12 +58,15 @@ type
     cmbHMAC: TComboBox;
     Label5: TLabel;
     Label6: TLabel;
-    RadioGroup1: TRadioGroup;
+    rgKeySource: TRadioGroup;
+    actGenerateKey: TAction;
+    btnGenerateKey: TButton;
     procedure FormCreate(Sender: TObject);
     procedure actEncryptExecute(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
     procedure actDecryptExecute(Sender: TObject);
     procedure FormShow(Sender: TObject);
+    procedure actGenerateKeyExecute(Sender: TObject);
   private
     FParams: TC2SymParams;
     FConfig: TC2SymConfig;
@@ -115,7 +118,6 @@ var
   cphr: IC2Cipher;
   mc: IC2HMac;
 begin
-  edtKey.Text := EmptyStr;
   edtMacSend.Text := EmptyStr;
   edtMacReceive.Text := EmptyStr;
   memoCypher.Lines.Clear;
@@ -136,6 +138,19 @@ begin
   memoCypher.Text := TC2Base64.Encode(ctext);
 end;
 
+procedure TfrmMain.actGenerateKeyExecute(Sender: TObject);
+var
+  s: string;
+  lenKey: integer;
+  key: TBytes;
+begin
+  edtKey.Clear;
+  s := cmbKeyLength.Items[cmbKeyLength.ItemIndex];
+  lenKey := StrToInt(s);
+  key := TC2Random.GenerateKey(lenKey);
+  edtKey.Text := TC2Base64.Encode(key);
+end;
+
 procedure TfrmMain.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
   if Assigned(FParams) then
@@ -145,8 +160,6 @@ begin
 end;
 
 procedure TfrmMain.FormCreate(Sender: TObject);
-var
-  rnd: Int32;
 const
   S_EURO = #$20AC; // U+20AC
   S_N = #$048A;
@@ -188,25 +201,34 @@ var
   s: string;
   lenSalt, lenKey, iter: integer;
   sC, sH: string;
-  arPwd: TBytes;
+  arPwd, arKey: TBytes;
 begin
   if Assigned(FParams) then
     FreeAndNil(FParams);
   if Assigned(FConfig) then
     FreeAndNil(FConfig);
 
-  // TODO: add keygenerator logic.
-  arPwd := TC2ConvSBS.BytesOf(edtPassword.Text);
-  s := edtSaltLength.Text;
-  lenSalt := StrToInt(s);
-  s := cmbKeyLength.Items[cmbKeyLength.ItemIndex];
-  lenKey := StrToInt(s);
-  iter := StrToInt(edtIterations.Text);
-  FParams := TC2SymParams.Create(arPwd, lenSalt, iter);
-
   sC := cmbCryptoAlgo.Items[cmbCryptoAlgo.ItemIndex];
   sH := cmbHMAC.Items[cmbHMAC.ItemIndex];
+  s := cmbKeyLength.Items[cmbKeyLength.ItemIndex];
+  lenKey := StrToInt(s);
   FConfig := TC2SymConfig.Create(sC, lenKey, sH);
+
+  case rgKeySource.ItemIndex of
+    0: // Password
+      begin
+        arPwd := TC2ConvSBS.BytesOf(edtPassword.Text);
+        s := edtSaltLength.Text;
+        lenSalt := StrToInt(s);
+        iter := StrToInt(edtIterations.Text);
+        FParams := TC2SymParams.Create(arPwd, lenSalt, iter);
+      end;
+    1: // Key
+      begin
+        arKey := TC2Base64.Decode(edtKey.Text);
+        FParams := TC2SymParams.Create(arKey, FConfig.lenIVBits);
+      end;
+  end;
 end;
 
 end.

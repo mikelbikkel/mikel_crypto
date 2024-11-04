@@ -21,6 +21,9 @@ interface
 
 uses System.SysUtils, System.Classes, ClpIDigest;
 
+resourcestring
+  SErrorKeyLength = 'Illegal key length';
+
 type
   TC2Base64 = class
   public
@@ -38,7 +41,7 @@ type
 
   // Add rnd (random number generator)
   TC2Random = class
-    class function Generate(const length: integer): TBytes;
+    class function GenerateKey(const lenKeyBits: integer): TBytes;
   end;
 
   // Add hsh (hash/digest)
@@ -76,12 +79,17 @@ end;
 
 { TC2Random }
 
-class function TC2Random.Generate(const length: integer): TBytes;
+class function TC2Random.GenerateKey(const lenKeyBits: integer): TBytes;
 var
   rnd: TRandom;
+  lenBytes: integer;
 begin
+  if (lenKeyBits mod 8) <> 0 then
+    raise Exception.CreateRes(@SErrorKeyLength);
+
+  lenBytes := lenKeyBits div 8;
   rnd := TRandom.Create;
-  SetLength(Result, length);
+  SetLength(Result, lenBytes);
   rnd.NextBytes(Result);
   rnd.Free;
 end;

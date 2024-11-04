@@ -50,6 +50,7 @@ type
 
     { Key section }
     FKey: TBytes;
+    FIV: TBytes; // TODO: add IV.
 
     { PBE section }
     // TODO: store pwd encrypted
@@ -57,14 +58,15 @@ type
     FIter: integer;
     FPwd: TBytes;
   public
-    constructor Create(const arPwd: TBytes; const lenSalt: integer = 8;
-      const iter: integer = 10000); overload;
-    constructor Create(const arKey: TBytes); overload;
+    constructor Create(const arPwd: TBytes; const lenSaltBits: integer;
+      const iter: integer); overload;
+    constructor Create(const arKey: TBytes; const lenIVBits: integer); overload;
     property salt: TBytes read FSalt;
     property iter: integer read FIter;
     property pwd: TBytes read FPwd;
     property KeyGen: TC2SymKeyGen read FKeyGen;
     property Key: TBytes read FKey;
+    property iv: TBytes read FIV;
   end;
 
   // Hash-based message authetication code.
@@ -101,9 +103,9 @@ implementation
 
 uses ClpIBufferedCipher, ClpCipherUtilities, ClpIDigest,
   ClpICipherParameters, ClpPkcs5S2ParametersGenerator, System.Math,
-  ClpIMac, ClpIHMac, ClpMacUtilities,
+  ClpIMac, ClpIHMac, ClpMacUtilities, ClpParametersWithIV,
   System.Types, System.StrUtils, ClpParameterUtilities,
-  ClpIKeyParameter, mc2_main;
+  ClpIKeyParameter, ClpIParametersWithIV, mc2_main;
 
 type
 
@@ -147,6 +149,7 @@ var
   dig: IDigest;
   pgen: TPkcs5S2ParametersGenerator;
   kp: IKeyParameter;
+  prmKeyIV: IParametersWithIV;
 begin
   items := SplitString(cfg.aCipher, '/');
   len := Length(items);
@@ -178,8 +181,14 @@ begin
       end;
     kgKey:
       begin
-        kp := TParameterUtilities.CreateKeyParameter('AES', params.Key);
-        FParams := kp;
+        kp := TParameterUtilities.CreateKeyParameter(FAlgorithm, params.Key);
+        if FMode = 'ECB' then
+          FParams := kp
+        else
+        begin
+          prmKeyIV := TParametersWithIV.Create(kp, params.iv);
+          FParams := prmKeyIV;
+        end;
       end;
   else
     raise Exception.CreateRes(@SErrorCipherAlgo);
@@ -242,26 +251,27 @@ end;
 { TC2SymParams }
 {$REGION TC2SymParams }
 
-constructor TC2SymParams.Create(const arPwd: TBytes; const lenSalt: integer;
+constructor TC2SymParams.Create(const arPwd: TBytes; const lenSaltBits: integer;
   const iter: integer);
 var
   lenS: integer;
 const
-  MIN_PKCS5_SALT_LEN = 8;
+  MIN_PKCS5_SALT_LEN_BITS = 64;
   MIN_ITERATIONS = 10000;
 begin
   FKeyGen := kgPassword;
   FPwd := arPwd;
   FIter := Max(iter, MIN_ITERATIONS);
 
-  lenS := Max(lenSalt, MIN_PKCS5_SALT_LEN);
-  FSalt := TC2Random.Generate(lenS);
+  lenS := Max(lenSaltBits, MIN_PKCS5_SALT_LEN_BITS);
+  FSalt := TC2Random.GenerateKey(lenS);
 end;
 
-constructor TC2SymParams.Create(const arKey: TBytes);
+constructor TC2SymParams.Create(const arKey: TBytes; const lenIVBits: integer);
 begin
   FKeyGen := kgKey;
   FKey := arKey;
+  FIV := TC2Random.GenerateKey(lenIVBits);
 end;
 {$ENDREGION}
 { TC2SymHMacImp }
