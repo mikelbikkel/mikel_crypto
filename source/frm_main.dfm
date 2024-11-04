@@ -73,7 +73,7 @@ object frmMain: TfrmMain
   object Label8: TLabel
     Left = 127
     Top = 243
-    Width = 73
+    Width = 59
     Height = 15
     Caption = 'Key length:'
   end
@@ -240,9 +240,11 @@ object frmMain: TfrmMain
     Width = 145
     Height = 105
     Caption = 'Key source'
+    ItemIndex = 0
     Items.Strings = (
-      'Password based'
-      'Key based')
+      'Password'
+      'Random key'
+      'Key agreement')
     TabOrder = 14
   end
   object alMain: TActionList

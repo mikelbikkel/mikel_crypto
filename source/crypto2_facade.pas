@@ -26,8 +26,6 @@ resourcestring
   SErrorCipherAlgo = 'Unknown cipher alogrithm';
 
 type
-  // TC2AES = (caAES128, caAES192, caAES256);
-
   IC2Cipher = interface
     function Encrypt(const arPlain: TBytes): TBytes;
     function Decrypt(const arCipher: TBytes): TBytes;
@@ -39,7 +37,9 @@ type
     class function Decode(const data: string): TBytes;
   end;
 
-  TC2UTF8 = class
+  // Convert from TBytes to string and from string to TBytes.
+  // Internally, it uses UTF8 to bypass codepage issues.
+  TC2ConvSBS = class
   public
     class function StringOf(const data: TBytes): string;
     class function BytesOf(const data: string): TBytes;
@@ -51,6 +51,47 @@ type
     function IsMacValid(const arPlain: TBytes; const arMac: TBytes): boolean;
   end;
 
+  TC2SymKeyGen = (kgPassword, kgRandom, kgAgreement);
+
+  TC2SymConfig = class
+  strict private
+    FCipherAlgo: string;
+    FLenKeyBits: integer;
+    FHMacAlgo: string;
+    FLenIVBits: integer;
+  public
+    constructor Create(const aCipher: string; const lenKeyBits: integer;
+      const aHMac: string);
+    property lenKeyBits: integer read FLenKeyBits;
+    property lenIVBits: integer read FLenIVBits;
+    property aCipher: string read FCipherAlgo;
+    property aHMac: string read FHMacAlgo;
+  end;
+
+  // After creation, this thing is immutable.
+  TC2SymParams = class
+  strict private
+    FKeyGen: TC2SymKeyGen;
+
+    { Key section }
+    FKey: TBytes;
+
+    { PBE section }
+    // TODO: store key encrypted
+    FSalt: TBytes;
+    FIter: integer;
+    FPwd: TBytes;
+  public
+    constructor Create(const arPwd: TBytes; const lenSalt: integer = 8;
+      const iter: integer = 10000); overload;
+    constructor Create(const arKey: TBytes); overload;
+    property salt: TBytes read FSalt;
+    property iter: integer read FIter;
+    property pwd: TBytes read FPwd;
+    property KeyGen: TC2SymKeyGen read FKeyGen;
+    property Key: TBytes read FKey;
+  end;
+
   // Hash-based message authetication code.
   // Make a deterministic hash-function pseudo-random.
   // Create variation by providing a key or a password.
@@ -58,47 +99,16 @@ type
   TC2HMac = class
   public
     class function getAlgoNames: TStrings;
-    class function getPBMAC1(const algo: string; const arPwd: TBytes;
-      const arSalt: TBytes; const iter: integer): IC2HMac;
-    class function getKeyMAC(const algo: string; const arKey: TBytes): IC2HMac;
-  end;
-
-  TC2AESConfig = record // TODO: class
-    FCipherAlgo: string;
-    // FKeyLength: integer;
-    FHMacAlgo: string;
-  end;
-
-  // After creation, this thing is immutable.
-  TC2AESParams = class
-  strict private
-
-    // TODO: add mode: key-based-encryption or PBE
-
-    { Key section }
-    // TODO: Add key-parameter.
-
-    { PBE section }
-    // TODO: add password parameter [store encrypted]
-    FSalt: TBytes;
-    FIter: integer;
-    FKeyLength: integer; // TODO: TC2AESConfig parameter
-    FIVLength: integer; // TODO: TC2AESConfig parameter
-  public
-    constructor Create(const keyLengthBits: integer = 256;
-      const lenSalt: integer = 8; const iter: integer = 10000);
-    property salt: TBytes read FSalt;
-    property iter: integer read FIter;
-    property lenKeyBits: integer read FKeyLength;
-    property lenIVBits: integer read FIVLength;
+    class function getHMAC(const cfg: TC2SymConfig;
+      const params: TC2SymParams): IC2HMac;
   end;
 
   TC2Cipher = class
   public
     class function getAlgoNames: TStrings;
     class function getKeyLengths: TStrings;
-    class function getPBES2(const algo: string; const arPwd: TBytes;
-      const params: TC2AESParams): IC2Cipher;
+    class function getCipher(const cfg: TC2SymConfig;
+      const params: TC2SymParams): IC2Cipher;
   end;
 
 implementation
@@ -106,7 +116,8 @@ implementation
 uses ClpIBufferedCipher, ClpCipherUtilities, ClpIDigest, ClpDigestUtilities,
   ClpICipherParameters, ClpPkcs5S2ParametersGenerator, System.Math, ClpRandom,
   ClpHMac, ClpIMac, ClpIHMac, ClpMacUtilities, SbpBase64, ClpIParametersWithIV,
-  ClpKeyParameter, System.StrUtils, System.Types;
+  ClpKeyParameter, System.StrUtils, System.Types, ClpParameterUtilities,
+  ClpIKeyParameter;
 
 type
 
@@ -131,7 +142,7 @@ type
     function IsMacValid(const arPlain: TBytes; const arMac: TBytes): boolean;
   end;
 
-  TC2AESImp = class(TInterfacedObject, IC2Cipher)
+  TC2SymCipher = class(TInterfacedObject, IC2Cipher)
   strict private
     FCipher: IBufferedCipher;
     FParams: ICipherParameters;
@@ -139,25 +150,25 @@ type
     FMode: string;
     FPadding: string;
   public
-    constructor Create(const algo: string; const arPwd: TBytes;
-      const params: TC2AESParams);
+    constructor Create(const cfg: TC2SymConfig; const params: TC2SymParams);
     destructor Destroy; override;
     function Encrypt(const arPlain: TBytes): TBytes;
     function Decrypt(const arCipher: TBytes): TBytes;
   end;
 
-  { TC2AESImp }
-{$REGION TC2AESImp }
+  { TC2SymCipher }
+{$REGION TC2SymCipher }
 
-constructor TC2AESImp.Create(const algo: string; const arPwd: TBytes;
-  const params: TC2AESParams);
+constructor TC2SymCipher.Create(const cfg: TC2SymConfig;
+  const params: TC2SymParams);
 var
   items: TStringDynArray;
   len: integer;
   dig: IDigest;
   pgen: TPkcs5S2ParametersGenerator;
+  kp: IKeyParameter;
 begin
-  items := SplitString(algo, '/');
+  items := SplitString(cfg.aCipher, '/');
   len := Length(items);
   if (len <> 3) then
     raise Exception.CreateRes(@SErrorCipherAlgo);
@@ -167,21 +178,34 @@ begin
   if (FAlgorithm <> 'AES') then
     raise Exception.CreateRes(@SErrorCipherAlgo);
 
-  FCipher := TCipherUtilities.GetCipher(algo);
+  FCipher := TCipherUtilities.getCipher(cfg.aCipher);
 
-  // TODO: leave as is? Parameter?
-  dig := TDigestUtilities.GetDigest('SHA-256');
-  pgen := TPkcs5S2ParametersGenerator.Create(dig);
-  pgen.Init(arPwd, params.salt, params.iter);
-  if FMode = 'ECB' then
-    FParams := pgen.GenerateDerivedParameters(FAlgorithm, params.lenKeyBits)
-  else
-    FParams := pgen.GenerateDerivedParameters(FAlgorithm, params.lenKeyBits,
-      params.lenIVBits);
-  pgen.Free;
+  // Create FParams based on params.keyGen
+  case params.KeyGen of
+    kgPassword:
+      begin
+        // TODO: make a param?
+        dig := TDigestUtilities.GetDigest('SHA-256');
+        pgen := TPkcs5S2ParametersGenerator.Create(dig);
+        pgen.Init(params.pwd, params.salt, params.iter);
+        if FMode = 'ECB' then
+          FParams := pgen.GenerateDerivedParameters(FAlgorithm, cfg.lenKeyBits)
+        else
+          FParams := pgen.GenerateDerivedParameters(FAlgorithm, cfg.lenKeyBits,
+            cfg.lenIVBits);
+        pgen.Free;
+      end;
+    kgRandom:
+      begin
+        kp := TParameterUtilities.CreateKeyParameter('AES', params.Key);
+        FParams := kp;
+      end;
+    kgAgreement:
+      raise Exception.CreateRes(@SErrorCipherAlgo);
+  end;
 end;
 
-function TC2AESImp.Decrypt(const arCipher: TBytes): TBytes;
+function TC2SymCipher.Decrypt(const arCipher: TBytes): TBytes;
 var
   BufCounter, Count, BufLen: Int32;
   arPlain: TBytes;
@@ -205,18 +229,17 @@ begin
       var
       s := e.Message;
     end;
-
   end;
 end;
 
-destructor TC2AESImp.Destroy;
+destructor TC2SymCipher.Destroy;
 begin
   FCipher := nil;
   FParams := nil;
   inherited;
 end;
 
-function TC2AESImp.Encrypt(const arPlain: TBytes): TBytes;
+function TC2SymCipher.Encrypt(const arPlain: TBytes): TBytes;
 var
   BufCounter, Count, BufLen: Int32;
   arCipher: TBytes;
@@ -235,10 +258,10 @@ begin
   Result := arCipher;
 end;
 {$ENDREGION}
-{ TCrypto2AESParams }
+{ TC2SymParams }
 
-constructor TC2AESParams.Create(const keyLengthBits: integer;
-  const lenSalt: integer; const iter: integer);
+constructor TC2SymParams.Create(const arPwd: TBytes; const lenSalt: integer;
+  const iter: integer);
 var
   rnd: TRandom;
   lenS: integer;
@@ -246,14 +269,9 @@ const
   MIN_PKCS5_SALT_LEN = 8;
   MIN_ITERATIONS = 10000;
 begin
-  // FAES := aes;
+  FKeyGen := kgPassword;
+  FPwd := arPwd;
   FIter := Max(iter, MIN_ITERATIONS);
-  FIVLength := 128; // 16 * 8;
-  if (keyLengthBits = 128) or (keyLengthBits = 192) or (keyLengthBits = 256)
-  then
-    FKeyLength := keyLengthBits
-  else
-    raise Exception.CreateRes(@SErrorAESLength);
 
   rnd := TRandom.Create;
   lenS := Max(lenSalt, MIN_PKCS5_SALT_LEN);
@@ -333,12 +351,12 @@ end;
 
 { TC2UTF8 }
 
-class function TC2UTF8.BytesOf(const data: string): TBytes;
+class function TC2ConvSBS.BytesOf(const data: string): TBytes;
 begin
   Result := TEncoding.UTF8.GetBytes(data);
 end;
 
-class function TC2UTF8.StringOf(const data: TBytes): string;
+class function TC2ConvSBS.StringOf(const data: TBytes): string;
 begin
   Result := TEncoding.UTF8.GetString(data);
 end;
@@ -362,16 +380,20 @@ begin
   Result.Add('HMAC-SHA3-512');
 end;
 
-class function TC2HMac.getKeyMAC(const algo: string;
-  const arKey: TBytes): IC2HMac;
+class function TC2HMac.getHMAC(const cfg: TC2SymConfig;
+  const params: TC2SymParams): IC2HMac;
 begin
-  Result := TKeyMACImp.Create(algo, arKey);
-end;
-
-class function TC2HMac.getPBMAC1(const algo: string;
-  const arPwd, arSalt: TBytes; const iter: integer): IC2HMac;
-begin
-  Result := TPBMAC1Imp.Create(algo, arPwd, arSalt, iter);
+  case params.KeyGen of
+    kgPassword:
+      Result := TPBMAC1Imp.Create(cfg.aHMac, params.pwd, params.salt,
+        params.iter);
+    kgRandom:
+      Result := TKeyMACImp.Create(cfg.aHMac, params.Key);
+    kgAgreement:
+      Result := nil;
+  else
+    Result := nil;
+  end;
 end;
 
 { TKeyMACImp }
@@ -439,10 +461,44 @@ begin
   Result.Add('256');
 end;
 
-class function TC2Cipher.getPBES2(const algo: string; const arPwd: TBytes;
-  const params: TC2AESParams): IC2Cipher;
+class function TC2Cipher.getCipher(const cfg: TC2SymConfig;
+  const params: TC2SymParams): IC2Cipher;
 begin
-  Result := TC2AESImp.Create(algo, arPwd, params);
+  case params.KeyGen of
+    kgPassword:
+      Result := TC2SymCipher.Create(cfg, params);
+    kgRandom:
+      Result := nil;
+    kgAgreement:
+      Result := nil;
+  else
+    Result := nil;
+
+  end;
+
+  Result := TC2SymCipher.Create(cfg, params);
+end;
+
+{ TC2SymConfig }
+
+constructor TC2SymConfig.Create(const aCipher: string;
+  const lenKeyBits: integer; const aHMac: string);
+begin
+  FLenIVBits := 128; // 16 * 8;
+  if (lenKeyBits = 128) or (lenKeyBits = 192) or (lenKeyBits = 256) then
+    FLenKeyBits := lenKeyBits
+  else
+    raise Exception.CreateRes(@SErrorAESLength);
+
+  FCipherAlgo := aCipher;
+  FHMacAlgo := aHMac;
+  FLenIVBits := 128; // For AES, IV length = 16 * 8;
+end;
+
+constructor TC2SymParams.Create(const arKey: TBytes);
+begin
+  FKeyGen := kgRandom;
+  FKey := arKey;
 end;
 
 end.

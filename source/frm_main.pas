@@ -65,8 +65,8 @@ type
     procedure actDecryptExecute(Sender: TObject);
     procedure FormShow(Sender: TObject);
   private
-    FParams: TC2AESParams;
-    FConfig: TC2AESConfig;
+    FParams: TC2SymParams;
+    FConfig: TC2SymConfig;
     procedure InitParams;
   public
     { Public declarations }
@@ -92,18 +92,18 @@ begin
     Exit;
 
   arCipher := TC2Base64.Decode(memoCypher.Text);
-  arPwd := TC2UTF8.BytesOf(edtPassword.Text);
+  arPwd := TC2ConvSBS.BytesOf(edtPassword.Text);
 
-  cphr := TC2Cipher.getPBES2(FConfig.FCipherAlgo, arPwd, FParams);
+  cphr := TC2Cipher.getCipher(FConfig, FParams);
   arPlain := cphr.Decrypt(arCipher);
-  mc := TC2HMac.getPBMAC1(FConfig.FHMacAlgo, arPwd, FParams.salt, FParams.iter);
+  mc := TC2HMac.getHMAC(FConfig, FParams);
   arMac := mc.GenerateMAC(arPlain);
   tst := mc.IsMacValid(arPlain, TC2Base64.Decode(edtMacSend.Text));
   mc := nil;
   cphr := nil;
 
   edtMacReceive.Text := TC2Base64.Encode(arMac);
-  memoDecrypt.Text := TC2UTF8.StringOf(arPlain);
+  memoDecrypt.Text := TC2ConvSBS.StringOf(arPlain);
 end;
 
 procedure TfrmMain.actEncryptExecute(Sender: TObject);
@@ -121,12 +121,12 @@ begin
 
   InitParams;
 
-  ar := TC2UTF8.BytesOf(memoPlain.Text);
-  arPwd := TC2UTF8.BytesOf(edtPassword.Text);
+  ar := TC2ConvSBS.BytesOf(memoPlain.Text);
+  arPwd := TC2ConvSBS.BytesOf(edtPassword.Text);
 
-  cphr := TC2Cipher.getPBES2(FConfig.FCipherAlgo, arPwd, FParams);
+  cphr := TC2Cipher.getCipher(FConfig, FParams);
   ctext := cphr.Encrypt(ar);
-  mc := TC2HMac.getPBMAC1(FConfig.FHMacAlgo, arPwd, FParams.salt, FParams.iter);
+  mc := TC2HMac.getHMAC(FConfig, FParams);
   arMac := mc.GenerateMAC(ar);
   edtMacSend.Text := TC2Base64.Encode(arMac);
   mc := nil;
@@ -138,6 +138,8 @@ procedure TfrmMain.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
   if Assigned(FParams) then
     FreeAndNil(FParams);
+  if Assigned(FConfig) then
+    FreeAndNil(FConfig);
 end;
 
 procedure TfrmMain.FormCreate(Sender: TObject);
@@ -183,20 +185,26 @@ procedure TfrmMain.InitParams;
 var
   s: string;
   lenSalt, lenKey, iter: integer;
-
+  sC, sH: string;
+  arPwd: TBytes;
 begin
   if Assigned(FParams) then
     FreeAndNil(FParams);
+  if Assigned(FConfig) then
+    FreeAndNil(FConfig);
 
+  // TODO: add keygenerator logic.
+  arPwd := TC2ConvSBS.BytesOf(edtPassword.Text);
   s := edtSaltLength.Text;
   lenSalt := StrToInt(s);
   s := cmbKeyLength.Items[cmbKeyLength.ItemIndex];
   lenKey := StrToInt(s);
   iter := StrToInt(edtIterations.Text);
-  FParams := TC2AESParams.Create(lenKey, lenSalt, iter);
+  FParams := TC2SymParams.Create(arPwd, lenSalt, iter);
 
-  FConfig.FCipherAlgo := cmbCryptoAlgo.Items[cmbCryptoAlgo.ItemIndex];
-  FConfig.FHMacAlgo := cmbHMAC.Items[cmbHMAC.ItemIndex];
+  sC := cmbCryptoAlgo.Items[cmbCryptoAlgo.ItemIndex];
+  sH := cmbHMAC.Items[cmbHMAC.ItemIndex];
+  FConfig := TC2SymConfig.Create(sC, lenKey, sH);
 end;
 
 end.
