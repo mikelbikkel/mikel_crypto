@@ -243,8 +243,7 @@ object frmMain: TfrmMain
     ItemIndex = 0
     Items.Strings = (
       'Password'
-      'Random key'
-      'Key agreement')
+      'Random key')
     TabOrder = 14
   end
   object alMain: TActionList

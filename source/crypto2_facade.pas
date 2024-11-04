@@ -26,11 +26,6 @@ resourcestring
   SErrorCipherAlgo = 'Unknown cipher alogrithm';
 
 type
-  IC2Cipher = interface
-    function Encrypt(const arPlain: TBytes): TBytes;
-    function Decrypt(const arCipher: TBytes): TBytes;
-  end;
-
   TC2Base64 = class
   public
     class function Encode(const data: TBytes): string;
@@ -45,13 +40,7 @@ type
     class function BytesOf(const data: string): TBytes;
   end;
 
-  // Hash-based message authetication code.
-  IC2HMac = interface
-    function GenerateMAC(const arPlain: TBytes): TBytes;
-    function IsMacValid(const arPlain: TBytes; const arMac: TBytes): boolean;
-  end;
-
-  TC2SymKeyGen = (kgPassword, kgRandom, kgAgreement);
+  TC2SymKeyGen = (kgPassword, kgKey);
 
   TC2SymConfig = class
   strict private
@@ -77,7 +66,7 @@ type
     FKey: TBytes;
 
     { PBE section }
-    // TODO: store key encrypted
+    // TODO: store pwd encrypted
     FSalt: TBytes;
     FIter: integer;
     FPwd: TBytes;
@@ -93,6 +82,12 @@ type
   end;
 
   // Hash-based message authetication code.
+  IC2HMac = interface
+    function GenerateMAC(const arPlain: TBytes): TBytes;
+    function IsMacValid(const arPlain: TBytes; const arMac: TBytes): boolean;
+  end;
+
+  // Hash-based message authetication code.
   // Make a deterministic hash-function pseudo-random.
   // Create variation by providing a key or a password.
   // The password also requires a salt and an iteration parameter.
@@ -101,6 +96,11 @@ type
     class function getAlgoNames: TStrings;
     class function getHMAC(const cfg: TC2SymConfig;
       const params: TC2SymParams): IC2HMac;
+  end;
+
+  IC2Cipher = interface
+    function Encrypt(const arPlain: TBytes): TBytes;
+    function Decrypt(const arCipher: TBytes): TBytes;
   end;
 
   TC2Cipher = class
@@ -121,28 +121,22 @@ uses ClpIBufferedCipher, ClpCipherUtilities, ClpIDigest, ClpDigestUtilities,
 
 type
 
-  TPBMAC1Imp = class(TInterfacedObject, IC2HMac)
+  TC2SymHMacImp = class(TInterfacedObject, IC2HMac)
   strict private
     FIMac: IMac;
+    procedure InitFromPassword(const arPwd, salt: TBytes; const iter: integer);
+    procedure InitFromKey(const arKey: TBytes);
   public
     constructor Create(const algo: string; const arPwd, salt: TBytes;
-      const iter: integer);
+      const iter: integer); overload;
+    constructor Create(const cfg: TC2SymConfig;
+      const params: TC2SymParams); overload;
     destructor Destroy; override;
     function GenerateMAC(const arPlain: TBytes): TBytes;
     function IsMacValid(const arPlain: TBytes; const arMac: TBytes): boolean;
   end;
 
-  TKeyMACImp = class(TInterfacedObject, IC2HMac)
-  strict private
-    FIMac: IMac;
-  public
-    constructor Create(const algo: string; const arKey: TBytes);
-    destructor Destroy; override;
-    function GenerateMAC(const arPlain: TBytes): TBytes;
-    function IsMacValid(const arPlain: TBytes; const arMac: TBytes): boolean;
-  end;
-
-  TC2SymCipher = class(TInterfacedObject, IC2Cipher)
+  TC2SymCipherImp = class(TInterfacedObject, IC2Cipher)
   strict private
     FCipher: IBufferedCipher;
     FParams: ICipherParameters;
@@ -156,10 +150,10 @@ type
     function Decrypt(const arCipher: TBytes): TBytes;
   end;
 
-  { TC2SymCipher }
-{$REGION TC2SymCipher }
+  { TC2SymCipherImp }
+{$REGION TC2SymCipherImp }
 
-constructor TC2SymCipher.Create(const cfg: TC2SymConfig;
+constructor TC2SymCipherImp.Create(const cfg: TC2SymConfig;
   const params: TC2SymParams);
 var
   items: TStringDynArray;
@@ -195,17 +189,17 @@ begin
             cfg.lenIVBits);
         pgen.Free;
       end;
-    kgRandom:
+    kgKey:
       begin
         kp := TParameterUtilities.CreateKeyParameter('AES', params.Key);
         FParams := kp;
       end;
-    kgAgreement:
-      raise Exception.CreateRes(@SErrorCipherAlgo);
+  else
+    raise Exception.CreateRes(@SErrorCipherAlgo);
   end;
 end;
 
-function TC2SymCipher.Decrypt(const arCipher: TBytes): TBytes;
+function TC2SymCipherImp.Decrypt(const arCipher: TBytes): TBytes;
 var
   BufCounter, Count, BufLen: Int32;
   arPlain: TBytes;
@@ -232,14 +226,14 @@ begin
   end;
 end;
 
-destructor TC2SymCipher.Destroy;
+destructor TC2SymCipherImp.Destroy;
 begin
   FCipher := nil;
   FParams := nil;
   inherited;
 end;
 
-function TC2SymCipher.Encrypt(const arPlain: TBytes): TBytes;
+function TC2SymCipherImp.Encrypt(const arPlain: TBytes): TBytes;
 var
   BufCounter, Count, BufLen: Int32;
   arCipher: TBytes;
@@ -259,6 +253,7 @@ begin
 end;
 {$ENDREGION}
 { TC2SymParams }
+{$REGION TC2SymParams }
 
 constructor TC2SymParams.Create(const arPwd: TBytes; const lenSalt: integer;
   const iter: integer);
@@ -280,9 +275,34 @@ begin
   rnd.Free;
 end;
 
-{ TPBMAC1Imp }
+constructor TC2SymParams.Create(const arKey: TBytes);
+begin
+  FKeyGen := kgKey;
+  FKey := arKey;
+end;
+{$ENDREGION}
+{ TC2SymHMacImp }
+{$REGION TC2SymHMacImp }
 
-constructor TPBMAC1Imp.Create(const algo: string; const arPwd, salt: TBytes;
+constructor TC2SymHMacImp.Create(const cfg: TC2SymConfig;
+  const params: TC2SymParams);
+var
+  dig: IDigest;
+  pgen: TPkcs5S2ParametersGenerator;
+  cp: ICipherParameters;
+  hm: IHMac;
+  len: integer;
+begin
+  FIMac := TMacUtilities.GetMac(cfg.aHMac);
+  case params.KeyGen of
+    kgPassword:
+      InitFromPassword(params.pwd, params.salt, params.iter);
+    kgKey:
+      InitFromKey(params.Key);
+  end;
+end;
+
+constructor TC2SymHMacImp.Create(const algo: string; const arPwd, salt: TBytes;
   const iter: integer);
 var
   dig: IDigest;
@@ -308,13 +328,13 @@ begin
   end;
 end;
 
-destructor TPBMAC1Imp.Destroy;
+destructor TC2SymHMacImp.Destroy;
 begin
   FIMac := nil;
   inherited;
 end;
 
-function TPBMAC1Imp.GenerateMAC(const arPlain: TBytes): TBytes;
+function TC2SymHMacImp.GenerateMAC(const arPlain: TBytes): TBytes;
 var
   res: TBytes;
   olen: integer;
@@ -326,7 +346,45 @@ begin
   Result := res;
 end;
 
-function TPBMAC1Imp.IsMacValid(const arPlain, arMac: TBytes): boolean;
+procedure TC2SymHMacImp.InitFromKey(const arKey: TBytes);
+var
+  kp: TKeyParameter;
+begin
+  kp := nil;
+  try
+    kp := TKeyParameter(arKey);
+    FIMac.Init(kp);
+  finally
+    kp := nil;
+  end;
+end;
+
+procedure TC2SymHMacImp.InitFromPassword(const arPwd, salt: TBytes;
+  const iter: integer);
+var
+  dig: IDigest;
+  pgen: TPkcs5S2ParametersGenerator;
+  cp: ICipherParameters;
+  hm: IHMac;
+  len: integer;
+begin
+  dig := nil;
+  pgen := nil;
+  try
+    hm := FIMac as IHMac;
+    dig := hm.GetUnderlyingDigest;
+    pgen := TPkcs5S2ParametersGenerator.Create(dig);
+    pgen.Init(arPwd, salt, iter);
+    len := FIMac.GetMacSize * 8;
+    cp := pgen.GenerateDerivedMacParameters(len);
+    FIMac.Init(cp);
+  finally
+    if Assigned(pgen) then
+      FreeAndNil(pgen);
+  end;
+end;
+
+function TC2SymHMacImp.IsMacValid(const arPlain, arMac: TBytes): boolean;
 var
   msgMac: TBytes;
   m1, m2: string;
@@ -336,7 +394,7 @@ begin
   m2 := TC2Base64.Encode(arMac);
   Result := m1.Equals(m2);
 end;
-
+{$ENDREGION}
 { TC2Base64 }
 
 class function TC2Base64.Decode(const data: string): TBytes;
@@ -383,62 +441,7 @@ end;
 class function TC2HMac.getHMAC(const cfg: TC2SymConfig;
   const params: TC2SymParams): IC2HMac;
 begin
-  case params.KeyGen of
-    kgPassword:
-      Result := TPBMAC1Imp.Create(cfg.aHMac, params.pwd, params.salt,
-        params.iter);
-    kgRandom:
-      Result := TKeyMACImp.Create(cfg.aHMac, params.Key);
-    kgAgreement:
-      Result := nil;
-  else
-    Result := nil;
-  end;
-end;
-
-{ TKeyMACImp }
-
-constructor TKeyMACImp.Create(const algo: string; const arKey: TBytes);
-var
-  kp: TKeyParameter;
-begin
-  kp := nil;
-  try
-    FIMac := TMacUtilities.GetMac(algo);
-    kp := TKeyParameter(arKey);
-    FIMac.Init(kp);
-  finally
-    kp := nil;
-  end;
-end;
-
-destructor TKeyMACImp.Destroy;
-begin
-  FIMac := nil;
-  inherited;
-end;
-
-function TKeyMACImp.GenerateMAC(const arPlain: TBytes): TBytes;
-var
-  res: TBytes;
-  olen: integer;
-begin
-  olen := FIMac.GetMacSize;
-  SetLength(res, olen);
-  FIMac.BlockUpdate(arPlain, 0, Length(arPlain));
-  FIMac.DoFinal(res, 0);
-  Result := res;
-end;
-
-function TKeyMACImp.IsMacValid(const arPlain, arMac: TBytes): boolean;
-var
-  msgMac: TBytes;
-  m1, m2: string;
-begin
-  msgMac := GenerateMAC(arPlain);
-  m1 := TC2Base64.Encode(msgMac);
-  m2 := TC2Base64.Encode(arMac);
-  Result := m1.Equals(m2);
+  Result := TC2SymHMacImp.Create(cfg, params);
 end;
 
 { TC2Cipher }
@@ -464,19 +467,7 @@ end;
 class function TC2Cipher.getCipher(const cfg: TC2SymConfig;
   const params: TC2SymParams): IC2Cipher;
 begin
-  case params.KeyGen of
-    kgPassword:
-      Result := TC2SymCipher.Create(cfg, params);
-    kgRandom:
-      Result := nil;
-    kgAgreement:
-      Result := nil;
-  else
-    Result := nil;
-
-  end;
-
-  Result := TC2SymCipher.Create(cfg, params);
+  Result := TC2SymCipherImp.Create(cfg, params);
 end;
 
 { TC2SymConfig }
@@ -493,12 +484,6 @@ begin
   FCipherAlgo := aCipher;
   FHMacAlgo := aHMac;
   FLenIVBits := 128; // For AES, IV length = 16 * 8;
-end;
-
-constructor TC2SymParams.Create(const arKey: TBytes);
-begin
-  FKeyGen := kgRandom;
-  FKey := arKey;
 end;
 
 end.
