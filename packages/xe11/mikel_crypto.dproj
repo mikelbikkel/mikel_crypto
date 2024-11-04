@@ -130,7 +130,8 @@
         </DCCReference>
         <DCCReference Include="..\..\source\crypto_facade.pas"/>
         <DCCReference Include="..\..\source\UsageExamples.pas"/>
-        <DCCReference Include="..\..\source\crypto2_facade.pas"/>
+        <DCCReference Include="..\..\source\mc2_symmetric.pas"/>
+        <DCCReference Include="..\..\source\mc2_main.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

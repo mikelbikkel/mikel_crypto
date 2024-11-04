@@ -23,7 +23,7 @@ uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
   System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, System.Actions,
-  Vcl.ActnList, crypto_facade, crypto2_facade, Vcl.ExtCtrls;
+  Vcl.ActnList, crypto_facade, mc2_symmetric, Vcl.ExtCtrls;
 
 type
   TfrmMain = class(TForm)
@@ -76,6 +76,8 @@ var
   frmMain: TfrmMain;
 
 implementation
+
+uses mc2_main;
 
 {$R *.dfm}
 
@@ -166,13 +168,13 @@ begin
   s := TC2Cipher.getAlgoNames;
   cmbCryptoAlgo.Items := s;
   s.Free;
-  cmbCryptoAlgo.ItemIndex := 1;
+  cmbCryptoAlgo.ItemIndex := 0;
 
   cmbKeyLength.Items.Clear;
   s := TC2Cipher.getKeyLengths;
   cmbKeyLength.Items := s;
   s.Free;
-  cmbKeyLength.ItemIndex := 1;
+  cmbKeyLength.ItemIndex := 0;
 
   cmbHMAC.Items.Clear;
   s := TC2HMac.getAlgoNames;

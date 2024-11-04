@@ -15,7 +15,7 @@
   limitations under the License.
 
   ****************************************************************************** }
-unit crypto2_facade;
+unit mc2_symmetric;
 
 interface
 
@@ -26,20 +26,6 @@ resourcestring
   SErrorCipherAlgo = 'Unknown cipher alogrithm';
 
 type
-  TC2Base64 = class
-  public
-    class function Encode(const data: TBytes): string;
-    class function Decode(const data: string): TBytes;
-  end;
-
-  // Convert from TBytes to string and from string to TBytes.
-  // Internally, it uses UTF8 to bypass codepage issues.
-  TC2ConvSBS = class
-  public
-    class function StringOf(const data: TBytes): string;
-    class function BytesOf(const data: string): TBytes;
-  end;
-
   TC2SymKeyGen = (kgPassword, kgKey);
 
   TC2SymConfig = class
@@ -113,11 +99,11 @@ type
 
 implementation
 
-uses ClpIBufferedCipher, ClpCipherUtilities, ClpIDigest, ClpDigestUtilities,
-  ClpICipherParameters, ClpPkcs5S2ParametersGenerator, System.Math, ClpRandom,
-  ClpHMac, ClpIMac, ClpIHMac, ClpMacUtilities, SbpBase64, ClpIParametersWithIV,
-  ClpKeyParameter, System.StrUtils, System.Types, ClpParameterUtilities,
-  ClpIKeyParameter;
+uses ClpIBufferedCipher, ClpCipherUtilities, ClpIDigest,
+  ClpICipherParameters, ClpPkcs5S2ParametersGenerator, System.Math,
+  ClpIMac, ClpIHMac, ClpMacUtilities,
+  System.Types, System.StrUtils, ClpParameterUtilities,
+  ClpIKeyParameter, mc2_main;
 
 type
 
@@ -179,10 +165,11 @@ begin
     kgPassword:
       begin
         // TODO: make a param?
-        dig := TDigestUtilities.GetDigest('SHA-256');
+        dig := TC2Digest.getDigest('SHA-256');
         pgen := TPkcs5S2ParametersGenerator.Create(dig);
         pgen.Init(params.pwd, params.salt, params.iter);
         if FMode = 'ECB' then
+          // ECB is the only mode without IV.
           FParams := pgen.GenerateDerivedParameters(FAlgorithm, cfg.lenKeyBits)
         else
           FParams := pgen.GenerateDerivedParameters(FAlgorithm, cfg.lenKeyBits,
@@ -258,7 +245,6 @@ end;
 constructor TC2SymParams.Create(const arPwd: TBytes; const lenSalt: integer;
   const iter: integer);
 var
-  rnd: TRandom;
   lenS: integer;
 const
   MIN_PKCS5_SALT_LEN = 8;
@@ -268,11 +254,8 @@ begin
   FPwd := arPwd;
   FIter := Max(iter, MIN_ITERATIONS);
 
-  rnd := TRandom.Create;
   lenS := Max(lenSalt, MIN_PKCS5_SALT_LEN);
-  System.SetLength(FSalt, lenS);
-  rnd.NextBytes(FSalt);
-  rnd.Free;
+  FSalt := TC2Random.Generate(lenS);
 end;
 
 constructor TC2SymParams.Create(const arKey: TBytes);
@@ -348,11 +331,11 @@ end;
 
 procedure TC2SymHMacImp.InitFromKey(const arKey: TBytes);
 var
-  kp: TKeyParameter;
+  kp: IKeyParameter;
 begin
   kp := nil;
   try
-    kp := TKeyParameter(arKey);
+    kp := TParameterUtilities.CreateKeyParameter('AES', arKey);
     FIMac.Init(kp);
   finally
     kp := nil;
@@ -395,30 +378,6 @@ begin
   Result := m1.Equals(m2);
 end;
 {$ENDREGION}
-{ TC2Base64 }
-
-class function TC2Base64.Decode(const data: string): TBytes;
-begin
-  Result := TBase64.UrlEncoding.Decode(data);
-end;
-
-class function TC2Base64.Encode(const data: TBytes): string;
-begin
-  Result := TBase64.UrlEncoding.Encode(data);
-end;
-
-{ TC2UTF8 }
-
-class function TC2ConvSBS.BytesOf(const data: string): TBytes;
-begin
-  Result := TEncoding.UTF8.GetBytes(data);
-end;
-
-class function TC2ConvSBS.StringOf(const data: TBytes): string;
-begin
-  Result := TEncoding.UTF8.GetString(data);
-end;
-
 { TC2HMac }
 
 class function TC2HMac.getAlgoNames: TStrings;
