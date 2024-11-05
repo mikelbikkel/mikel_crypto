@@ -61,12 +61,16 @@ type
     rgKeySource: TRadioGroup;
     actGenerateKey: TAction;
     btnGenerateKey: TButton;
+    edtLenPlain: TEdit;
+    edtLenCipher: TEdit;
+    edtLenMac: TEdit;
     procedure FormCreate(Sender: TObject);
     procedure actEncryptExecute(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
     procedure actDecryptExecute(Sender: TObject);
     procedure FormShow(Sender: TObject);
     procedure actGenerateKeyExecute(Sender: TObject);
+
   private
     FParams: TC2SymParams;
     FConfig: TC2SymConfig;
@@ -118,20 +122,26 @@ var
   cphr: IC2Cipher;
   mc: IC2HMac;
 begin
-  edtMacSend.Text := EmptyStr;
-  edtMacReceive.Text := EmptyStr;
+  edtMacSend.Clear;
+  edtMacReceive.Clear;
   memoCypher.Lines.Clear;
   memoDecrypt.Lines.Clear;
+  edtLenPlain.Clear;
+  edtLenMac.Clear;
+  edtLenCipher.Clear;
 
   InitParams;
 
   ar := TC2ConvSBS.BytesOf(memoPlain.Text);
   arPwd := TC2ConvSBS.BytesOf(edtPassword.Text);
+  edtLenPlain.Text := IntToStr(Length(arPwd)) + ' bytes';
 
   cphr := TC2Cipher.getCipher(FConfig, FParams);
   ctext := cphr.Encrypt(ar);
+  edtLenCipher.Text := IntToStr(Length(ctext)) + ' bytes';
   mc := TC2HMac.getHMAC(FConfig, FParams);
   arMac := mc.GenerateMAC(ar);
+  edtLenMac.Text := IntToStr(Length(arMac)) + ' bytes';
   edtMacSend.Text := TC2Base64.Encode(arMac);
   mc := nil;
   cphr := nil;

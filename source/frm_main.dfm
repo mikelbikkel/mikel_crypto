@@ -254,6 +254,33 @@ object frmMain: TfrmMain
     Action = actGenerateKey
     TabOrder = 15
   end
+  object edtLenPlain: TEdit
+    Left = 703
+    Top = 114
+    Width = 73
+    Height = 23
+    ReadOnly = True
+    TabOrder = 16
+    Text = 'edtLenPlain'
+  end
+  object edtLenCipher: TEdit
+    Left = 703
+    Top = 440
+    Width = 73
+    Height = 23
+    ReadOnly = True
+    TabOrder = 17
+    Text = 'edtLenCipher'
+  end
+  object edtLenMac: TEdit
+    Left = 703
+    Top = 362
+    Width = 73
+    Height = 23
+    ReadOnly = True
+    TabOrder = 18
+    Text = 'edtLenMac'
+  end
   object alMain: TActionList
     Left = 600
     Top = 24

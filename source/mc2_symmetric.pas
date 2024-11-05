@@ -26,6 +26,36 @@ resourcestring
   SErrorCipherAlgo = 'Unknown cipher alogrithm';
 
 type
+
+  { block cipher key size   block size  IV size    CTR size
+    AES-128     16 bytes    16 bytes    16 bytes   16 bytes
+    AES-192     24 bytes    16 bytes    16 bytes   16 bytes
+    AES-256     32 bytes    16 bytes    16 bytes   16 bytes
+    Triple DES  24 bytes    8 bytes     8 bytes
+    Blowfish    32-448 bits 8 bytes     8 bytes
+
+    AES mode  Type      IV   Padding  CTR  Remark
+    ECB       Block     No   PKCS7    No   Electronic Code Book - weak. Not recommended.
+    CBC       Block     Yes  PKCS7    No   Cipher Block Chaining.
+    CFB       Stream    Yes  No       No   Cipher FeedBack mode
+    OFB       Stream    Yes  No       No   Output FeedBack mode
+    CTR       Stream    No   No       Yes  Counter mode.
+
+    Hash algo. hash size
+    MD5        16 bytes / 128 bit
+    SHA1       20 bytes / 160 bit
+    SHA256     32 bytes / 256 bit
+    SHA512     64 bytes / 512 bits
+
+    Stream ciphers convert one symbol of plaintext directly into a
+    symbol of ciphertext.
+    Block ciphers encrypt a group of plaintext symbols as one block.
+    Most modern symmetric encryption algorithms are block ciphers.
+    https://www.highgo.ca/2019/08/08/the-difference-in-five-modes-in-the-aes-encryption-algorithm/
+
+    PKCS#5 padding is defined for 8-byte block sizes, PKCS#7 padding would work for any block size from 1 to 255 bytes.
+  }
+
   TC2SymKeyGen = (kgPassword, kgKey);
 
   TC2SymConfig = class
@@ -43,7 +73,8 @@ type
     property aHMac: string read FHMacAlgo;
   end;
 
-  // After creation, this thing is immutable.
+  // TODO: keysize of the AES (24 bytes) is too short for the min keysize of the HMACSH512 (64 bytes).
+  // The IV and MAC key are added at Encrypt time.
   TC2SymParams = class
   strict private
     FKeyGen: TC2SymKeyGen;
@@ -79,6 +110,8 @@ type
   // Make a deterministic hash-function pseudo-random.
   // Create variation by providing a key or a password.
   // The password also requires a salt and an iteration parameter.
+  // RFC 2104.
+  // Keysize >= Length-output-hash and <= block size.
   TC2HMac = class
   public
     class function getAlgoNames: TStrings;
@@ -115,8 +148,6 @@ type
     procedure InitFromPassword(const arPwd, salt: TBytes; const iter: integer);
     procedure InitFromKey(const arKey: TBytes);
   public
-    constructor Create(const algo: string; const arPwd, salt: TBytes;
-      const iter: integer); overload;
     constructor Create(const cfg: TC2SymConfig;
       const params: TC2SymParams); overload;
     destructor Destroy; override;
@@ -303,39 +334,15 @@ var
   cp: ICipherParameters;
   hm: IHMac;
   len: integer;
+  keyLenBits: integer;
 begin
   FIMac := TMacUtilities.GetMac(cfg.aHMac);
+  keyLenBits := FIMac.GetMacSize * 8;
   case params.KeyGen of
     kgPassword:
       InitFromPassword(params.pwd, params.salt, params.iter);
     kgKey:
       InitFromKey(params.Key);
-  end;
-end;
-
-constructor TC2SymHMacImp.Create(const algo: string; const arPwd, salt: TBytes;
-  const iter: integer);
-var
-  dig: IDigest;
-  pgen: TPkcs5S2ParametersGenerator;
-  cp: ICipherParameters;
-  hm: IHMac;
-  len: integer;
-begin
-  dig := nil;
-  pgen := nil;
-  try
-    FIMac := TMacUtilities.GetMac(algo);
-    hm := FIMac as IHMac;
-    dig := hm.GetUnderlyingDigest;
-    pgen := TPkcs5S2ParametersGenerator.Create(dig);
-    pgen.Init(arPwd, salt, iter);
-    len := FIMac.GetMacSize * 8;
-    cp := pgen.GenerateDerivedMacParameters(len);
-    FIMac.Init(cp);
-  finally
-    if assigned(pgen) then
-      FreeAndNil(pgen);
   end;
 end;
 
@@ -363,6 +370,7 @@ var
 begin
   kp := nil;
   try
+    // TODO: use KDF to derive key from the AES key.
     kp := TParameterUtilities.CreateKeyParameter('AES', arKey);
     FIMac.Init(kp);
   finally

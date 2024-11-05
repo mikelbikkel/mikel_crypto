@@ -37,36 +37,6 @@ type
     function toString: string;
   end;
 
-  { block cipher key size  block size  IV size    CTR size
-    AES-128     16 bytes   16 bytes    16 bytes   16 bytes
-    AES-192     24 bytes   16 bytes    16 bytes   16 bytes
-    AES-256     32 bytes   16 bytes    16 bytes   16 bytes
-    Triple DES  24 bytes   8 bytes     8 bytes
-
-    AES mode  Type      IV   Padding  CTR  Remark
-    ECB       Block     No   PKCS7    No   Electronic Code Book - weak. Not recommended.
-    CBC       Block     Yes  PKCS7    No   Cipher Block Chaining.
-    CFB       Stream    Yes  No       No   Cipher FeedBack mode
-    OFB       Stream    Yes  No       No   Output FeedBack mode
-    CTR       Stream    No   No       Yes  Counter mode.
-
-    Hash algo. hash size
-    MD5        16 bytes 128 bit
-    SHA1       20 bytes 160 bit
-    SHA256     32 bytes 256 bit
-    SHA512     64 bytes 512 bits
-
-    For AES-256 you can use SHA256 to hash the key.
-    For the others? Truncate the key to the desired length?
-
-    Stream ciphers convert one symbol of plaintext directly into a
-    symbol of ciphertext.
-    Block ciphers encrypt a group of plaintext symbols as one block.
-    Most modern symmetric encryption algorithms are block ciphers.
-    https://www.highgo.ca/2019/08/08/the-difference-in-five-modes-in-the-aes-encryption-algorithm/
-
-    PKCS#5 padding is defined for 8-byte block sizes, PKCS#7 padding would work for any block size from 1 to 255 bytes.
-  }
 
   // TODO: AES192 / AES128.
   // TODO: Enum for cipher names? Cipher interface?
