@@ -50,7 +50,7 @@ type
 
     { Key section }
     FKey: TBytes;
-    FIV: TBytes; // TODO: add IV.
+    FIV: TBytes;
 
     { PBE section }
     // TODO: store pwd encrypted
@@ -131,6 +131,9 @@ type
     FAlgorithm: string;
     FMode: string;
     FPadding: string;
+    procedure InitFromKey(const arKey: TBytes; const arIV: TBytes);
+    procedure InitFromPassword(const cfg: TC2SymConfig;
+      const params: TC2SymParams);
   public
     constructor Create(const cfg: TC2SymConfig; const params: TC2SymParams);
     destructor Destroy; override;
@@ -146,50 +149,25 @@ constructor TC2SymCipherImp.Create(const cfg: TC2SymConfig;
 var
   items: TStringDynArray;
   len: integer;
-  dig: IDigest;
-  pgen: TPkcs5S2ParametersGenerator;
-  kp: IKeyParameter;
-  prmKeyIV: IParametersWithIV;
 begin
   items := SplitString(cfg.aCipher, '/');
   len := Length(items);
   if (len <> 3) then
     raise Exception.CreateRes(@SErrorCipherAlgo);
+  if (items[0] <> 'AES') then
+    raise Exception.CreateRes(@SErrorCipherAlgo);
   FAlgorithm := items[0];
   FMode := items[1];
   FPadding := items[2];
-  if (FAlgorithm <> 'AES') then
-    raise Exception.CreateRes(@SErrorCipherAlgo);
 
   FCipher := TCipherUtilities.getCipher(cfg.aCipher);
 
-  // Create FParams based on params.keyGen
+  // Init FParams
   case params.KeyGen of
     kgPassword:
-      begin
-        // TODO: make a param?
-        dig := TC2Digest.getDigest('SHA-256');
-        pgen := TPkcs5S2ParametersGenerator.Create(dig);
-        pgen.Init(params.pwd, params.salt, params.iter);
-        if FMode = 'ECB' then
-          // ECB is the only mode without IV.
-          FParams := pgen.GenerateDerivedParameters(FAlgorithm, cfg.lenKeyBits)
-        else
-          FParams := pgen.GenerateDerivedParameters(FAlgorithm, cfg.lenKeyBits,
-            cfg.lenIVBits);
-        pgen.Free;
-      end;
+      InitFromPassword(cfg, params);
     kgKey:
-      begin
-        kp := TParameterUtilities.CreateKeyParameter(FAlgorithm, params.Key);
-        if FMode = 'ECB' then
-          FParams := kp
-        else
-        begin
-          prmKeyIV := TParametersWithIV.Create(kp, params.iv);
-          FParams := prmKeyIV;
-        end;
-      end;
+      InitFromKey(params.Key, params.iv);
   else
     raise Exception.CreateRes(@SErrorCipherAlgo);
   end;
@@ -247,6 +225,46 @@ begin
   SetLength(arCipher, BufCounter);
   Result := arCipher;
 end;
+
+procedure TC2SymCipherImp.InitFromKey(const arKey, arIV: TBytes);
+var
+  kp: IKeyParameter;
+  prmKeyIV: IParametersWithIV;
+begin
+  kp := TParameterUtilities.CreateKeyParameter(FAlgorithm, arKey);
+  if FMode = 'ECB' then
+    FParams := kp
+  else
+  begin
+    prmKeyIV := TParametersWithIV.Create(kp, arIV);
+    FParams := prmKeyIV;
+  end;
+end;
+
+procedure TC2SymCipherImp.InitFromPassword(const cfg: TC2SymConfig;
+  const params: TC2SymParams);
+var
+  dig: IDigest;
+  pgen: TPkcs5S2ParametersGenerator;
+begin
+  pgen := nil;
+  try
+    // TODO: make a param?
+    dig := TC2Digest.getDigest('SHA-256');
+    pgen := TPkcs5S2ParametersGenerator.Create(dig);
+    pgen.Init(params.pwd, params.salt, params.iter);
+    if FMode = 'ECB' then
+      // ECB is the only mode without IV.
+      FParams := pgen.GenerateDerivedParameters(FAlgorithm, cfg.lenKeyBits)
+    else
+      FParams := pgen.GenerateDerivedParameters(FAlgorithm, cfg.lenKeyBits,
+        cfg.lenIVBits);
+  finally
+    if assigned(pgen) then
+      pgen.Free;
+  end;
+end;
+
 {$ENDREGION}
 { TC2SymParams }
 {$REGION TC2SymParams }
@@ -316,7 +334,7 @@ begin
     cp := pgen.GenerateDerivedMacParameters(len);
     FIMac.Init(cp);
   finally
-    if Assigned(pgen) then
+    if assigned(pgen) then
       FreeAndNil(pgen);
   end;
 end;
@@ -372,7 +390,7 @@ begin
     cp := pgen.GenerateDerivedMacParameters(len);
     FIMac.Init(cp);
   finally
-    if Assigned(pgen) then
+    if assigned(pgen) then
       FreeAndNil(pgen);
   end;
 end;
